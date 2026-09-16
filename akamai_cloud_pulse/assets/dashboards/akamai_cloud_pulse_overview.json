@@ -425,7 +425,7 @@
             "layout": {
               "x": 0,
               "y": 0,
-              "width": 3,
+              "width": 4,
               "height": 2
             }
           },
@@ -458,9 +458,9 @@
               ]
             },
             "layout": {
-              "x": 3,
+              "x": 4,
               "y": 0,
-              "width": 3,
+              "width": 4,
               "height": 2
             }
           },
@@ -493,44 +493,9 @@
               ]
             },
             "layout": {
-              "x": 6,
+              "x": 8,
               "y": 0,
-              "width": 3,
-              "height": 2
-            }
-          },
-          {
-            "id": 16,
-            "definition": {
-              "title": "Min active backends per port",
-              "title_size": "16",
-              "title_align": "left",
-              "type": "query_value",
-              "autoscale": true,
-              "precision": 0,
-              "requests": [
-                {
-                  "formulas": [
-                    {
-                      "formula": "q0"
-                    }
-                  ],
-                  "queries": [
-                    {
-                      "name": "q0",
-                      "data_source": "metrics",
-                      "query": "min:akamai_cloud_pulse.nodebalancer.total_active_backends{$region,$entity_label,$lke_cluster}",
-                      "aggregator": "last"
-                    }
-                  ],
-                  "response_format": "scalar"
-                }
-              ]
-            },
-            "layout": {
-              "x": 9,
-              "y": 0,
-              "width": 3,
+              "width": 4,
               "height": 2
             }
           },
@@ -702,34 +667,38 @@
           {
             "id": 21,
             "definition": {
-              "title": "Active backends",
+              "title": "Active backends by port (lowest first)",
               "title_size": "16",
               "title_align": "left",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "type": "timeseries",
+              "type": "toplist",
               "requests": [
                 {
-                  "formulas": [
-                    {
-                      "formula": "q0",
-                      "alias": "backends"
-                    }
-                  ],
                   "queries": [
                     {
                       "name": "q0",
                       "data_source": "metrics",
+                      "aggregator": "last",
                       "query": "min:akamai_cloud_pulse.nodebalancer.total_active_backends{$region,$entity_label,$lke_cluster} by {entity_label,port}"
                     }
                   ],
-                  "response_format": "timeseries",
-                  "display_type": "line",
-                  "style": {
-                    "palette": "dog_classic"
-                  }
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "limit": {
+                        "count": 10,
+                        "order": "asc"
+                      }
+                    }
+                  ],
+                  "response_format": "scalar"
                 }
-              ]
+              ],
+              "style": {
+                "display": {
+                  "type": "stacked",
+                  "legend": "automatic"
+                }
+              }
             },
             "layout": {
               "x": 8,
