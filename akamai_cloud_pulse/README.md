@@ -121,7 +121,7 @@ This integration does not include any events.
 ### Dashboards and monitors
 
 - `assets/dashboards/akamai_cloud_pulse_overview.json`: overview dashboard.
-  Import it from **Dashboards > New Dashboard > Import dashboard JSON**.
+  Create a blank dashboard, then use **Configure > Import dashboard JSON** to load it.
 - `assets/monitors/`: monitor templates for API failures, high database disk
   usage, and NodeBalancer ports with no healthy backends.
 
