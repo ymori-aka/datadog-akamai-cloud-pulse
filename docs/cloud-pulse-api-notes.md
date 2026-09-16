@@ -43,6 +43,8 @@ Response is Prometheus-like (`resultType: matrix`):
 - Both edges can be partial. For nodebalancer (5 min buckets), the newest bucket
   (a few seconds old) read `0` while the previous one read 162 Bps. The check
   submits the newest point that is at least one bucket old.
+- All entities in one request must be in the **same region**
+  (`403 Entities belong to different data centers`).
 - At most **5 metrics per request** (`400 Maximum limit of 5 metrics exceeded`).
 - `group_by` accepts only `entity_id` and declared dimension labels
   (`node_id` is rejected even though it is returned). A dimension that one of the
@@ -72,6 +74,7 @@ Each aggregate is validated per metric. Choose the aggregate from
 | unknown / inaccessible entity | token | 403 | `errors[].reason = "The following entity_ids are not valid - [...]"` |
 | invalid / expired token | metrics | 401 | `"Invalid Token"` → re-issue the token and retry once |
 | token for a different service_type | metrics | 403 | `"Token unauthorized for requested service type"` |
+| entities from several regions | metrics | 403 | `"Entities belong to different data centers"` |
 | unsupported aggregate | metrics | 400 | lists the supported functions |
 | expired / revoked PAT | api.linode.com | 401 | → service check CRITICAL |
 
