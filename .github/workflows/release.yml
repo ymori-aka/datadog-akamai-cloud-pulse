@@ -1,8 +1,12 @@
 name: Release
 
+# Tags (v*) publish a versioned wheel, Agent image, and GitHub release.
+# Pushes to main publish the Agent image as :main for testing unreleased changes.
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,8 +16,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Install ddev
@@ -21,30 +25,34 @@ jobs:
           pipx install ddev
           ddev config set repos.extras "$GITHUB_WORKSPACE"
           ddev config set repo extras
-      - name: Check tag matches package version
+      - name: Resolve image tags
         run: |
           version=$(sed -n "s/^__version__ = '\(.*\)'/\1/p" akamai_cloud_pulse/datadog_checks/akamai_cloud_pulse/__about__.py)
-          test "v${version}" = "${GITHUB_REF_NAME}"
-          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/datadog-agent-akamai-cloud-pulse"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            test "v${version}" = "${GITHUB_REF_NAME}"
+            printf 'IMAGE_TAGS=%s:%s,%s:latest\n' "$image" "$version" "$image" >> "$GITHUB_ENV"
+          else
+            printf 'IMAGE_TAGS=%s:main\n' "$image" >> "$GITHUB_ENV"
+          fi
       - name: Build wheel
         run: ddev release build akamai_cloud_pulse
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push Agent image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/datadog-agent-akamai-cloud-pulse:${{ env.VERSION }}
-            ghcr.io/${{ github.repository_owner }}/datadog-agent-akamai-cloud-pulse:latest
+          tags: ${{ env.IMAGE_TAGS }}
       - name: Create GitHub release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
