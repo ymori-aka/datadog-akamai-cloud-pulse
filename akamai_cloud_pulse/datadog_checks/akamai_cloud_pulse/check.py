@@ -116,17 +116,33 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
         for definition in definitions:
             by_interval.setdefault(_scrape_seconds(definition), []).append(definition)
 
-        entity_ids = sorted(entities)
+        # Cloud Pulse rejects a request whose entities span regions
+        # ("Entities belong to different data centers"), so query each region separately.
+        by_region: dict[str, list[int]] = {}
+        for entity_id, tags in sorted(entities.items()):
+            by_region.setdefault(_region_of(tags), []).append(entity_id)
+
+        # One failing region should not stop the others; report the first error afterwards.
+        first_error: Exception | None = None
         for scrape_seconds, defs in sorted(by_interval.items()):
             granularity_min = max(1, math.ceil(scrape_seconds / 60))
             for i in range(0, len(defs), MAX_METRICS_PER_REQUEST):
                 batch = defs[i : i + MAX_METRICS_PER_REQUEST]
-                for j in range(0, len(entity_ids), MAX_ENTITIES_PER_TOKEN):
-                    ids = tuple(entity_ids[j : j + MAX_ENTITIES_PER_TOKEN])
-                    self._query_and_submit(service_type, ids, batch, granularity_min, entities, now)
+                for region, region_ids in sorted(by_region.items()):
+                    for j in range(0, len(region_ids), MAX_ENTITIES_PER_TOKEN):
+                        ids = tuple(region_ids[j : j + MAX_ENTITIES_PER_TOKEN])
+                        try:
+                            self._query_and_submit(service_type, ids, batch, granularity_min, entities, now)
+                        except CloudPulseAuthError:
+                            raise
+                        except (HTTPError, RequestException, ValueError) as e:
+                            self.log.warning('Cloud Pulse %s query failed for region %s: %s', service_type, region, e)
+                            first_error = first_error or e
 
         shortest = min(by_interval) if by_interval else 60
         self._next_query_at[service_type] = now + max(60, shortest)
+        if first_error is not None:
+            raise first_error
 
     def _query_and_submit(
         self,
@@ -289,6 +305,13 @@ def _entity_tags(service_type: str, item: dict[str, Any]) -> list[str]:
         if cluster.get('label'):
             tags.append(f'lke_cluster:{cluster["label"]}')
     return tags
+
+
+def _region_of(tags: list[str]) -> str:
+    for tag in tags:
+        if tag.startswith('region:'):
+            return tag[len('region:') :]
+    return ''
 
 
 def _scrape_seconds(definition: dict[str, Any]) -> int:

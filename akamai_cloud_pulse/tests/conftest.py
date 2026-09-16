@@ -62,6 +62,12 @@ class FakeCloudPulse:
         self.pat_status = 200
         self.metrics_401_once = False
         self.issued_tokens = 0
+        self.failing_region: str | None = None
+        self.regions = {
+            item['id']: item['region']
+            for name in ('databases_instances.json', 'nodebalancers.json')
+            for item in load_fixture(name)['data']
+        }
 
     def get(self, url: str, **kwargs: Any) -> MockResponse:
         return self._handle('get', url, None, kwargs)
@@ -97,6 +103,11 @@ class FakeCloudPulse:
             assert auth.startswith('Bearer cp-token-')
             if len(body['metrics']) > 5:
                 return _response(url, {'errors': [{'reason': 'Maximum limit of 5 metrics exceeded'}]}, 400)
+            regions = {self.regions.get(i) for i in body['entity_ids']}
+            if len(regions) > 1:
+                return _response(url, {'errors': [{'reason': 'Entities belong to different data centers'}]}, 403)
+            if self.failing_region is not None and self.failing_region in regions:
+                return _response(url, {'errors': [{'reason': 'Service unavailable'}]}, 503)
             return _response(url, _metrics_payload(body))
 
         return _response(url, {'errors': [{'reason': 'Not found'}]}, 404)

@@ -88,8 +88,9 @@ def test_requests_respect_api_limits(
     dd_run_check(check)
 
     bodies = _metric_requests(fake_api)
-    # 7 dbaas metrics -> 2 requests, 15 nodebalancer metrics -> 3 requests.
-    assert len(bodies) == 5
+    # 7 dbaas metrics -> 2 requests (one region),
+    # 15 nodebalancer metrics -> 3 requests x 2 regions.
+    assert len(bodies) == 8
     for body in bodies:
         assert len(body['metrics']) <= 5
         assert body['group_by'][0] == 'entity_id'
@@ -100,8 +101,22 @@ def test_requests_respect_api_limits(
                 assert metric['aggregate_function'] == 'sum'
     nb = [b for b in bodies if b['metrics'][0]['name'].startswith('nb_')]
     assert all(b['time_granularity'] == {'unit': 'min', 'value': 5} for b in nb)
-    # One token per service, reused across requests.
-    assert fake_api.issued_tokens == 2
+    # One token per service and region, reused across requests.
+    assert fake_api.issued_tokens == 3
+
+
+def test_failing_region_does_not_block_others(
+    dd_run_check: Callable[..., None], aggregator: AggregatorStub, fake_api: FakeCloudPulse
+) -> None:
+    fake_api.failing_region = 'us-sea'
+    instance = {'personal_access_token': 'test-pat', 'services': [{'service_type': 'nodebalancer'}]}
+    check = AkamaiCloudPulseCheck('akamai_cloud_pulse', {}, [instance])
+    dd_run_check(check)
+
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.nodebalancer.ingress_traffic_rate', 'entity_id:2001')
+    for metric in aggregator.metrics('akamai_cloud_pulse.nodebalancer.ingress_traffic_rate'):
+        assert 'entity_id:2002' not in metric.tags
+    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.CRITICAL, count=1)
 
 
 def test_second_run_is_throttled(
@@ -131,9 +146,9 @@ def test_explicit_entities_and_metrics(
     dd_run_check(check)
 
     bodies = _metric_requests(fake_api)
-    assert len(bodies) == 1
-    assert bodies[0]['entity_ids'] == [1002, 4242]
-    assert [m['name'] for m in bodies[0]['metrics']] == ['cpu_usage']
+    # 4242 is not discovered, so its region is unknown and it is queried on its own.
+    assert sorted(b['entity_ids'] for b in bodies) == [[1002], [4242]]
+    assert all([m['name'] for m in b['metrics']] == ['cpu_usage'] for b in bodies)
 
     aggregator.assert_metric('akamai_cloud_pulse.dbaas.cpu_usage', count=2)
     aggregator.assert_metric_has_tag('akamai_cloud_pulse.dbaas.cpu_usage', 'entity_label:cache')
