@@ -1,1 +1,0 @@
-Query each region separately, because Cloud Pulse rejects requests whose entities span regions. A failing region no longer blocks the others.

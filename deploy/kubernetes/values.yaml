@@ -27,7 +27,7 @@ datadog:
 agents:
   image:
     repository: ghcr.io/ymori-aka/datadog-agent-akamai-cloud-pulse
-    tag: "0.0.1"
+    tag: "0.1.0"
     doNotCheckTag: true
 
 clusterAgent:

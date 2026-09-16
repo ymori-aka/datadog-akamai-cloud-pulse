@@ -695,8 +695,7 @@
               ],
               "style": {
                 "display": {
-                  "type": "stacked",
-                  "legend": "automatic"
+                  "type": "flat"
                 }
               }
             },
