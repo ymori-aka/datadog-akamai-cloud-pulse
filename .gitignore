@@ -11,3 +11,4 @@ build/
 akamai_cloud_pulse/dist/
 .mypy_cache/
 .ruff_cache/
+.DS_Store
