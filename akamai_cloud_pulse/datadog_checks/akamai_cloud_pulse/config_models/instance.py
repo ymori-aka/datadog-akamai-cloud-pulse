@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from typing_extensions import Literal
@@ -55,7 +55,8 @@ class Service(BaseModel):
         arbitrary_types_allowed=True,
         frozen=True,
     )
-    entity_ids: Optional[tuple[int, ...]] = None
+    entity_ids: Optional[tuple[Union[int, str], ...]] = None
+    entity_regions: Optional[tuple[str, ...]] = None
     metrics: Optional[tuple[str, ...]] = None
     service_type: str
 

@@ -26,15 +26,30 @@ DEFAULT_ENTITY_REFRESH_INTERVAL = 3600
 # Preferred aggregate when a metric supports several.
 AGGREGATE_PREFERENCE = ('avg', 'sum', 'max', 'min')
 
-# Per service: where to list entities and which prefix to strip from Cloud Pulse metric names.
+# Per service:
+#   list_path       where to list entities
+#   id_field        entity field Cloud Pulse uses as entity_id
+#   metric_prefix   prefix to strip from Cloud Pulse metric names
+#   regional        metrics are queried with entity_region, and the token covers
+#                   the whole account (Object Storage rejects entity_ids on the token)
 SERVICES: dict[str, dict[str, Any]] = {
     'dbaas': {
         'list_path': '/databases/instances',
+        'id_field': 'id',
         'metric_prefix': '',
+        'regional': False,
     },
     'nodebalancer': {
         'list_path': '/nodebalancers',
+        'id_field': 'id',
         'metric_prefix': 'nb_',
+        'regional': False,
+    },
+    'objectstorage': {
+        'list_path': '/object-storage/buckets',
+        'id_field': 'hostname',
+        'metric_prefix': 'obj_',
+        'regional': True,
     },
 }
 
@@ -52,13 +67,13 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
         super().__init__(name, init_config, instances)
         # service_type -> list of metric definitions
         self._definitions: dict[str, list[dict[str, Any]]] = {}
-        # service_type -> {entity_id: [tags]}
-        self._entities: dict[str, dict[int, list[str]]] = {}
+        # service_type -> {entity_id: [tags]}; entity IDs are kept as strings
+        self._entities: dict[str, dict[str, list[str]]] = {}
         self._entities_refreshed_at: dict[str, float] = {}
         # (service_type, entity_ids) -> (token, expires_at)
-        self._tokens: dict[tuple[str, tuple[int, ...]], tuple[str, float]] = {}
-        # service_type -> earliest time the next metrics query is worthwhile
-        self._next_query_at: dict[str, float] = {}
+        self._tokens: dict[tuple[str, tuple[str, ...]], tuple[str, float]] = {}
+        # (service_type, scrape_seconds) -> earliest time the next query is worthwhile
+        self._next_query_at: dict[tuple[str, int], float] = {}
         self._api_url = DEFAULT_API_URL
         self._monitor_api_url = DEFAULT_MONITOR_API_URL
         self._entity_refresh_interval = DEFAULT_ENTITY_REFRESH_INTERVAL
@@ -72,6 +87,10 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
             if service.service_type not in SERVICES:
                 raise ConfigurationError(
                     f'Unsupported service_type `{service.service_type}`. Supported: {", ".join(sorted(SERVICES))}'
+                )
+            if service.entity_regions and not SERVICES[service.service_type]['regional']:
+                raise ConfigurationError(
+                    f'`entity_regions` is only supported for objectstorage, not {service.service_type}'
                 )
 
     def check(self, _: InstanceType) -> None:
@@ -100,9 +119,6 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
             self.log.info('No %s entities to monitor', service_type)
             return
 
-        if now < self._next_query_at.get(service_type, 0):
-            return
-
         if service.metrics:
             wanted = set(service.metrics)
             unknown = wanted - {d['metric'] for d in definitions}
@@ -110,21 +126,30 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
                 self.log.warning('Unknown %s metrics ignored: %s', service_type, ', '.join(sorted(unknown)))
             definitions = [d for d in definitions if d['metric'] in wanted]
 
-        # Metrics with different scrape intervals are queried separately so each
-        # batch can use a granularity that matches its data.
+        # Metrics with different scrape intervals are queried separately, each at
+        # most once per interval: hourly metrics (for example Object Storage bucket
+        # size) would otherwise be fetched and submitted again every run.
         by_interval: dict[int, list[dict[str, Any]]] = {}
         for definition in definitions:
             by_interval.setdefault(_scrape_seconds(definition), []).append(definition)
 
         # Cloud Pulse rejects a request whose entities span regions
         # ("Entities belong to different data centers"), so query each region separately.
-        by_region: dict[str, list[int]] = {}
+        by_region: dict[str, list[str]] = {}
         for entity_id, tags in sorted(entities.items()):
             by_region.setdefault(_region_of(tags), []).append(entity_id)
+        if SERVICES[service_type]['regional'] and '' in by_region:
+            # entity_region is mandatory for these services.
+            self.log.warning(
+                'Skipping %s entities with an unknown region: %s', service_type, ', '.join(by_region.pop(''))
+            )
 
         # One failing region should not stop the others; report the first error afterwards.
         first_error: Exception | None = None
         for scrape_seconds, defs in sorted(by_interval.items()):
+            throttle_key = (service_type, scrape_seconds)
+            if now < self._next_query_at.get(throttle_key, 0):
+                continue
             granularity_min = max(1, math.ceil(scrape_seconds / 60))
             for i in range(0, len(defs), MAX_METRICS_PER_REQUEST):
                 batch = defs[i : i + MAX_METRICS_PER_REQUEST]
@@ -132,25 +157,25 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
                     for j in range(0, len(region_ids), MAX_ENTITIES_PER_TOKEN):
                         ids = tuple(region_ids[j : j + MAX_ENTITIES_PER_TOKEN])
                         try:
-                            self._query_and_submit(service_type, ids, batch, granularity_min, entities, now)
+                            self._query_and_submit(service_type, region, ids, batch, granularity_min, entities, now)
                         except CloudPulseAuthError:
                             raise
                         except (HTTPError, RequestException, ValueError) as e:
                             self.log.warning('Cloud Pulse %s query failed for region %s: %s', service_type, region, e)
                             first_error = first_error or e
+            self._next_query_at[throttle_key] = now + max(60, scrape_seconds)
 
-        shortest = min(by_interval) if by_interval else 60
-        self._next_query_at[service_type] = now + max(60, shortest)
         if first_error is not None:
             raise first_error
 
     def _query_and_submit(
         self,
         service_type: str,
-        entity_ids: tuple[int, ...],
+        region: str,
+        entity_ids: tuple[str, ...],
         definitions: list[dict[str, Any]],
         granularity_min: int,
-        entities: dict[int, list[str]],
+        entities: dict[str, list[str]],
         now: float,
     ) -> None:
         by_name = {d['metric']: d for d in definitions}
@@ -161,13 +186,17 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
                 if label not in group_by:
                     group_by.append(label)
 
-        body = {
+        body: dict[str, Any] = {
             'metrics': [{'name': d['metric'], 'aggregate_function': _pick_aggregate(d)} for d in definitions],
-            'entity_ids': list(entity_ids),
             'relative_time_duration': {'unit': 'min', 'value': granularity_min * 3},
             'time_granularity': {'unit': 'min', 'value': granularity_min},
             'group_by': group_by,
         }
+        if SERVICES[service_type]['regional']:
+            body['entity_region'] = region
+            body['entity_ids'] = list(entity_ids)
+        else:
+            body['entity_ids'] = [int(i) for i in entity_ids]
         result = self._fetch_metrics(service_type, entity_ids, body)
 
         # The newest bucket is usually still being filled (it can read 0), so
@@ -189,21 +218,22 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
             entity_id = labels.pop('entity_id', None)
             tags = list(self.config.tags or ())
             if entity_id is not None:
-                tags.extend(entities.get(int(entity_id), [f'entity_id:{entity_id}']))
+                tags.extend(entities.get(str(entity_id), [f'entity_id:{entity_id}']))
             tags.extend(f'{k}:{v}' for k, v in sorted(labels.items()) if v != '')
             tags.append(f'aggregate_function:{aggregate}')
 
             name = cp_name[len(prefix) :] if prefix and cp_name.startswith(prefix) else cp_name
             self.gauge(f'{service_type}.{name}', point, tags=tags)
 
-    def _fetch_metrics(self, service_type: str, entity_ids: tuple[int, ...], body: dict[str, Any]) -> list[Any]:
+    def _fetch_metrics(self, service_type: str, entity_ids: tuple[str, ...], body: dict[str, Any]) -> list[Any]:
         url = f'{self._monitor_api_url}/monitor/services/{service_type}/metrics'
+        token_key = self._token_key(service_type, entity_ids)
         for attempt in (1, 2):
-            token = self._token(service_type, entity_ids)
+            token = self._token(*token_key)
             response = self.http.post(url, json=body, extra_headers={'Authorization': f'Bearer {token}'})
             if response.status_code == 401 and attempt == 1:
                 # Token expired early or was revoked: issue a new one and retry once.
-                self._tokens.pop((service_type, entity_ids), None)
+                self._tokens.pop(token_key, None)
                 continue
             _raise_for_status(response)
             payload = response.json()
@@ -238,15 +268,23 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
             self._definitions[service_type] = self._api_get_all(f'/monitor/services/{service_type}/metric-definitions')
         return self._definitions[service_type]
 
-    def _token(self, service_type: str, entity_ids: tuple[int, ...]) -> str:
+    @staticmethod
+    def _token_key(service_type: str, entity_ids: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
+        # An account-wide token (regional services) is shared by every request.
+        return (service_type, () if SERVICES[service_type]['regional'] else entity_ids)
+
+    def _token(self, service_type: str, entity_ids: tuple[str, ...]) -> str:
         key = (service_type, entity_ids)
         cached = self._tokens.get(key)
         if cached and cached[1] > time.time():
             return cached[0]
 
+        body: dict[str, Any] = {}
+        if entity_ids:
+            body['entity_ids'] = [int(i) for i in entity_ids]
         response = self.http.post(
             f'{self._api_url}/monitor/services/{service_type}/token',
-            json={'entity_ids': list(entity_ids)},
+            json=body,
             extra_headers={'Authorization': f'Bearer {self.config.personal_access_token}'},
         )
         _raise_for_status(response)
@@ -254,7 +292,7 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
         self._tokens[key] = (token, time.time() + TOKEN_TTL_SECONDS)
         return token
 
-    def _resolve_entities(self, service: Any, now: float) -> dict[int, list[str]]:
+    def _resolve_entities(self, service: Any, now: float) -> dict[str, list[str]]:
         service_type = service.service_type
         refreshed_at = self._entities_refreshed_at.get(service_type)
         if refreshed_at is not None and now - refreshed_at < self._entity_refresh_interval:
@@ -271,16 +309,24 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
             self.log.warning('Could not list %s entities, continuing without entity tags: %s', service_type, e)
             items = []
 
+        id_field = SERVICES[service_type]['id_field']
         discovered = {}
         for item in items:
             if service_type == 'dbaas' and item.get('status') not in (None, 'active'):
                 continue
-            discovered[int(item['id'])] = _entity_tags(service_type, item)
+            if not item.get(id_field):
+                continue
+            discovered[str(item[id_field])] = _entity_tags(service_type, item)
 
         if service.entity_ids:
-            entities = {i: discovered.get(i, [f'entity_id:{i}']) for i in service.entity_ids}
+            wanted_ids = [str(i) for i in service.entity_ids]
+            entities = {i: discovered.get(i, [f'entity_id:{i}']) for i in wanted_ids}
         else:
             entities = discovered
+
+        if service.entity_regions:
+            regions = set(service.entity_regions)
+            entities = {i: tags for i, tags in entities.items() if _region_of(tags) in regions}
 
         self._entities[service_type] = entities
         self._entities_refreshed_at[service_type] = now
@@ -288,11 +334,16 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
 
 
 def _entity_tags(service_type: str, item: dict[str, Any]) -> list[str]:
-    tags = [f'entity_id:{item["id"]}']
-    if item.get('label'):
-        tags.append(f'entity_label:{item["label"]}')
+    tags = [f'entity_id:{item[SERVICES[service_type]["id_field"]]}']
     if item.get('region'):
         tags.append(f'region:{item["region"]}')
+    if service_type == 'objectstorage':
+        if item.get('label'):
+            tags.append(f'bucket:{item["label"]}')
+        return tags
+
+    if item.get('label'):
+        tags.append(f'entity_label:{item["label"]}')
     if service_type == 'dbaas':
         if item.get('engine'):
             tags.append(f'engine:{item["engine"]}')
@@ -334,17 +385,19 @@ def _pick_aggregate(definition: dict[str, Any]) -> str:
 
 
 def _latest_point(values: list[Any], cutoff: float) -> float | None:
+    """Return the newest non-null value at or before `cutoff`."""
     latest_ts = None
     latest_value = None
     for ts, value in values:
         ts = float(ts)
-        if ts > cutoff:
+        if ts > cutoff or value is None:
             continue
         if latest_ts is None or ts > latest_ts:
             try:
-                latest_ts, latest_value = ts, float(value)
+                latest_value = float(value)
             except (TypeError, ValueError):
                 continue
+            latest_ts = ts
     return latest_value
 
 

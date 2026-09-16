@@ -1,6 +1,6 @@
 {
   "title": "Akamai Cloud Pulse - Overview",
-  "description": "Managed Database and NodeBalancer metrics collected from Akamai Cloud Pulse.",
+  "description": "Managed Database, NodeBalancer, and Object Storage metrics collected from Akamai Cloud Pulse.",
   "widgets": [
     {
       "id": 3,
@@ -15,7 +15,7 @@
             "id": 1,
             "definition": {
               "type": "note",
-              "content": "This dashboard shows [Akamai Cloud Pulse](https://techdocs.akamai.com/cloud-computing/docs/akamai-cloud-pulse) metrics for Managed Databases and NodeBalancers on Akamai Cloud.\n\nValues are the most recent complete Cloud Pulse bucket (1 minute for databases, 5 minutes for NodeBalancers), so they trail real time by up to one bucket.\n\nUse the template variables to filter by region, entity label, or LKE cluster.",
+              "content": "This dashboard shows [Akamai Cloud Pulse](https://techdocs.akamai.com/cloud-computing/docs/akamai-cloud-pulse) metrics for Managed Databases, NodeBalancers, and Object Storage on Akamai Cloud.\n\nValues are the most recent complete Cloud Pulse bucket (1 minute for databases and most Object Storage metrics, 5 minutes for NodeBalancers, 1 hour for Object Storage content), so they trail real time by up to one bucket.\n\nUse the template variables to filter by region, entity label, LKE cluster, or bucket.",
               "background_color": "white",
               "font_size": "14",
               "text_align": "left",
@@ -714,6 +714,410 @@
         "width": 12,
         "height": 9
       }
+    },
+    {
+      "id": 33,
+      "definition": {
+        "title": "Object Storage",
+        "background_color": "vivid_orange",
+        "show_title": true,
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 23,
+            "definition": {
+              "title": "Content stored",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 1,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.bucket_size{$region,$bucket}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "width": 3,
+              "height": 2
+            }
+          },
+          {
+            "id": 24,
+            "definition": {
+              "title": "Objects",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.bucket_num_objects{$region,$bucket}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 3,
+              "y": 0,
+              "width": 3,
+              "height": 2
+            }
+          },
+          {
+            "id": 25,
+            "definition": {
+              "title": "Requests (time range)",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.requests_num{$region,$bucket}",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "width": 3,
+              "height": 2
+            }
+          },
+          {
+            "id": 26,
+            "definition": {
+              "title": "5xx responses (time range)",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.responses_5xx{$region,$bucket}",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 9,
+              "y": 0,
+              "width": 3,
+              "height": 2
+            }
+          },
+          {
+            "id": 27,
+            "definition": {
+              "title": "Content stored by bucket",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "size"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.bucket_size{$region,$bucket} by {bucket}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 2,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 28,
+            "definition": {
+              "title": "Requests by type",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "requests"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.requests_num{$region,$bucket} by {request_type}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 6,
+              "y": 2,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 29,
+            "definition": {
+              "title": "Responses by type",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "responses"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.responses_num{$region,$bucket} by {response_type}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 5,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 30,
+            "definition": {
+              "title": "Throughput by bucket (B/s)",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "ingress"
+                    },
+                    {
+                      "formula": "q1",
+                      "alias": "egress"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.ingress_throughput{$region,$bucket} by {bucket}"
+                    },
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.egress_throughput{$region,$bucket} by {bucket}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 6,
+              "y": 5,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 31,
+            "definition": {
+              "title": "Time to first byte (ms)",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "ttfb"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "avg:akamai_cloud_pulse.objectstorage.ttfb_average{$region,$bucket} by {bucket}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 8,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 32,
+            "definition": {
+              "title": "Largest buckets",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "toplist",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "aggregator": "last",
+                      "query": "sum:akamai_cloud_pulse.objectstorage.bucket_size{$region,$bucket} by {bucket}"
+                    }
+                  ],
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "limit": {
+                        "count": 10,
+                        "order": "desc"
+                      }
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ],
+              "style": {
+                "display": {
+                  "type": "flat"
+                }
+              }
+            },
+            "layout": {
+              "x": 6,
+              "y": 8,
+              "width": 6,
+              "height": 3
+            }
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 22,
+        "width": 12,
+        "height": 12
+      }
     }
   ],
   "template_variables": [
@@ -732,6 +1136,12 @@
     {
       "name": "lke_cluster",
       "prefix": "lke_cluster",
+      "available_values": [],
+      "default": "*"
+    },
+    {
+      "name": "bucket",
+      "prefix": "bucket",
       "available_values": [],
       "default": "*"
     }

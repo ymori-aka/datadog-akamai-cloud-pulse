@@ -25,7 +25,14 @@ DIMENSION_VALUES = {
     'port': '443',
     'protocol': 'tcp',
     'config_id': '9001',
+    'endpoint': 'us-ord-1.linodeobjects.com',
+    'request_type': 'get',
+    'response_type': '2xx',
 }
+
+# Regions where the fake Cloud Pulse has no Object Storage data (like a region
+# without Object Storage support): requests succeed with an empty result.
+OBJECT_STORAGE_UNSUPPORTED_REGIONS = {'us-sea'}
 
 
 def load_fixture(name: str) -> Any:
@@ -40,7 +47,7 @@ def dd_environment() -> Iterator[InstanceType]:
         pytest.skip('AKAMAI_CLOUD_PULSE_PAT is not set')
     yield {
         'personal_access_token': token,
-        'services': [{'service_type': 'dbaas'}, {'service_type': 'nodebalancer'}],
+        'services': [{'service_type': 'dbaas'}, {'service_type': 'nodebalancer'}, {'service_type': 'objectstorage'}],
         'empty_default_hostname': True,
     }
 
@@ -49,7 +56,7 @@ def dd_environment() -> Iterator[InstanceType]:
 def instance() -> InstanceType:
     return {
         'personal_access_token': 'test-pat',
-        'services': [{'service_type': 'dbaas'}, {'service_type': 'nodebalancer'}],
+        'services': [{'service_type': 'dbaas'}, {'service_type': 'nodebalancer'}, {'service_type': 'objectstorage'}],
         'tags': ['team:test'],
     }
 
@@ -68,6 +75,9 @@ class FakeCloudPulse:
             for name in ('databases_instances.json', 'nodebalancers.json')
             for item in load_fixture(name)['data']
         }
+        self.regions.update(
+            {item['hostname']: item['region'] for item in load_fixture('object_storage_buckets.json')['data']}
+        )
 
     def get(self, url: str, **kwargs: Any) -> MockResponse:
         return self._handle('get', url, None, kwargs)
@@ -89,10 +99,15 @@ class FakeCloudPulse:
                 return _response(url, load_fixture('databases_instances.json'))
             if path == '/v4/nodebalancers':
                 return _response(url, load_fixture('nodebalancers.json'))
+            if path == '/v4/object-storage/buckets':
+                return _response(url, load_fixture('object_storage_buckets.json'))
             if path.endswith('/metric-definitions'):
                 service_type = path.split('/')[4]
                 return _response(url, load_fixture(f'{service_type}_metric_definitions.json'))
             if path.endswith('/token'):
+                if '/objectstorage/' in path and body.get('entity_ids'):
+                    reason = 'entity_ids are not supported for service type objectstorage.'
+                    return _response(url, {'errors': [{'reason': reason}]}, 400)
                 self.issued_tokens += 1
                 return _response(url, {'token': f'cp-token-{self.issued_tokens}'})
 
@@ -104,6 +119,15 @@ class FakeCloudPulse:
             if len(body['metrics']) > 5:
                 return _response(url, {'errors': [{'reason': 'Maximum limit of 5 metrics exceeded'}]}, 400)
             regions = {self.regions.get(i) for i in body['entity_ids']}
+            if '/objectstorage/' in path:
+                region = body.get('entity_region')
+                if not region:
+                    reason = 'entity_region is required for servicetype objectstorage'
+                    return _response(url, {'errors': [{'reason': reason}]}, 400)
+                if regions - {region}:
+                    return _response(url, {'errors': [{'reason': 'Entities not in entity_region'}]}, 400)
+                if region in OBJECT_STORAGE_UNSUPPORTED_REGIONS:
+                    return _response(url, _empty_payload())
             if len(regions) > 1:
                 return _response(url, {'errors': [{'reason': 'Entities belong to different data centers'}]}, 403)
             if self.failing_region is not None and self.failing_region in regions:
@@ -118,6 +142,8 @@ def _metrics_payload(body: dict[str, Any]) -> dict[str, Any]:
     step = body['time_granularity']['value'] * 60
     values = [[now - step * i - 3, str(COMPLETE_VALUE)] for i in range(3, 0, -1)]
     values.append([now - 3, '0'])
+    # Cloud Pulse returns null for buckets without data, for example the oldest hourly bucket.
+    values.insert(0, [now - step * 4 - 3, None])
 
     result = []
     for metric in body['metrics']:
@@ -130,6 +156,10 @@ def _metrics_payload(body: dict[str, Any]) -> dict[str, Any]:
                 labels['node_id'] = 'primary-1'
             result.append({'metric': labels, 'values': values})
     return {'data': {'result': result, 'resultType': 'matrix'}, 'isPartial': False, 'status': 'success'}
+
+
+def _empty_payload() -> dict[str, Any]:
+    return {'data': {'result': [], 'resultType': 'matrix'}, 'isPartial': False, 'status': 'success'}
 
 
 def _response(url: str, payload: Any, status: int = 200) -> MockResponse:

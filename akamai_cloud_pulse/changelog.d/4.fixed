@@ -1,0 +1,1 @@
+Query each group of metrics at most once per scrape interval, so hourly metrics are no longer fetched and submitted every run.

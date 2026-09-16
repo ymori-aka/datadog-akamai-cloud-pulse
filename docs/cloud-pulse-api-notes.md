@@ -85,7 +85,7 @@ The window length is not documented.
 
 ## Object Storage (`objectstorage`)
 
-Observed 2026-09-16. Not yet collected by the check.
+Observed 2026-09-16. Collected by the check since 0.2.0.
 
 - The entity ID is the bucket hostname (for example `my-bucket.jp-tyo-1.linodeobjects.com`),
   not a number. List buckets with `GET /v4/object-storage/buckets`; the `hostname` field matches.
@@ -105,3 +105,8 @@ Observed 2026-09-16. Not yet collected by the check.
     complete value is 1-2 hours old.
   - `obj_ttfb_average`: 900s.
   - Everything else: 60s.
+- Request and response counts are per bucket per minute and can swing sharply
+  between minutes (for example 1495 → 364 → 0 → 1487). Requests sent seconds apart
+  can select different minutes, so two metrics from the same bucket may not line up.
+- `obj_requests_num` grouped by `request_type` matches the per-type metrics
+  (`obj_requests_get`, ...) for the same minute.

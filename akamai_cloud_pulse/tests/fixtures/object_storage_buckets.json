@@ -1,0 +1,31 @@
+{
+  "data": [
+    {
+      "label": "assets",
+      "region": "us-ord",
+      "hostname": "assets.us-ord-1.linodeobjects.com",
+      "cluster": "us-ord-1",
+      "size": 1024,
+      "objects": 3
+    },
+    {
+      "label": "logs",
+      "region": "us-ord",
+      "hostname": "logs.us-ord-1.linodeobjects.com",
+      "cluster": "us-ord-1",
+      "size": 2048,
+      "objects": 7
+    },
+    {
+      "label": "archive",
+      "region": "us-sea",
+      "hostname": "archive.us-sea-1.linodeobjects.com",
+      "cluster": "us-sea-1",
+      "size": 4096,
+      "objects": 1
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 3
+}

@@ -13,17 +13,23 @@ files:
       description: |
         Akamai Cloud (Linode) personal access token.
         Required scopes: `monitor:read_only`, plus read-only access to each monitored service
-        (for example `databases:read_only`, `nodebalancers:read_only`).
+        (for example `databases:read_only`, `nodebalancers:read_only`, `object_storage:read_only`).
       value:
         type: string
     - name: services
       required: true
       description: |
         The Cloud Pulse service types to collect.
-        Supported values for `service_type`: `dbaas`, `nodebalancer`.
+        Supported values for `service_type`: `dbaas`, `nodebalancer`, `objectstorage`.
 
         `entity_ids`: IDs of the entities to monitor. If omitted, all entities
         of that service visible to the token are discovered automatically.
+        For `objectstorage`, use bucket hostnames, for example
+        `my-bucket.us-east-1.linodeobjects.com`.
+
+        `entity_regions`: `objectstorage` only. Regions to collect, for example
+        `us-east`. If omitted, every region that has a bucket is collected.
+        Regions where Cloud Pulse does not support Object Storage return no data.
 
         `metrics`: Cloud Pulse metric names to collect. If omitted, every metric
         from the service's metric definitions is collected.
@@ -37,7 +43,13 @@ files:
           - name: entity_ids
             type: array
             items:
-              type: integer
+              anyOf:
+              - type: integer
+              - type: string
+          - name: entity_regions
+            type: array
+            items:
+              type: string
           - name: metrics
             type: array
             items:
@@ -49,6 +61,9 @@ files:
         - service_type: nodebalancer
           entity_ids:
           - 1234567
+        - service_type: objectstorage
+          entity_regions:
+          - us-east
     - name: api_url
       description: Base URL of the Akamai Cloud (Linode) API.
       value:

@@ -1,6 +1,7 @@
 # (C) Datadog, Inc. 2026-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
+import time
 from typing import Callable
 
 import pytest
@@ -64,11 +65,29 @@ def test_check_collects_all_metrics(
         ],
     )
     aggregator.assert_metric_has_tag('akamai_cloud_pulse.nodebalancer.ingress_traffic_rate', 'entity_id:2002')
+    aggregator.assert_metric(
+        'akamai_cloud_pulse.objectstorage.bucket_size',
+        value=COMPLETE_VALUE,
+        count=1,
+        tags=[
+            'team:test',
+            'entity_id:assets.us-ord-1.linodeobjects.com',
+            'bucket:assets',
+            'region:us-ord',
+            'endpoint:us-ord-1.linodeobjects.com',
+            'aggregate_function:avg',
+        ],
+    )
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.objectstorage.requests_num', 'request_type:get')
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.objectstorage.responses_num', 'response_type:2xx')
+    # A region without Object Storage data produces no metrics and no error.
+    for metric in aggregator.metrics('akamai_cloud_pulse.objectstorage.bucket_size'):
+        assert 'bucket:archive' not in metric.tags
     # Suspended databases are not monitored.
     for metric in aggregator.metrics('akamai_cloud_pulse.dbaas.cpu_usage'):
         assert 'entity_id:1003' not in metric.tags
 
-    for service_type in ('dbaas', 'nodebalancer'):
+    for service_type in ('dbaas', 'nodebalancer', 'objectstorage'):
         aggregator.assert_service_check(
             'akamai_cloud_pulse.can_connect',
             AgentCheck.OK,
@@ -89,8 +108,9 @@ def test_requests_respect_api_limits(
 
     bodies = _metric_requests(fake_api)
     # 7 dbaas metrics -> 2 requests (one region),
-    # 15 nodebalancer metrics -> 3 requests x 2 regions.
-    assert len(bodies) == 8
+    # 15 nodebalancer metrics -> 3 requests x 2 regions,
+    # 21 objectstorage metrics in 3 scrape intervals (2 + 1 + 18 metrics) -> 1 + 1 + 4 requests x 2 regions.
+    assert len(bodies) == 2 + 6 + 12
     for body in bodies:
         assert len(body['metrics']) <= 5
         assert body['group_by'][0] == 'entity_id'
@@ -101,8 +121,14 @@ def test_requests_respect_api_limits(
                 assert metric['aggregate_function'] == 'sum'
     nb = [b for b in bodies if b['metrics'][0]['name'].startswith('nb_')]
     assert all(b['time_granularity'] == {'unit': 'min', 'value': 5} for b in nb)
-    # One token per service and region, reused across requests.
-    assert fake_api.issued_tokens == 3
+    obj = [b for b in bodies if b['metrics'][0]['name'].startswith('obj_')]
+    assert all(b['entity_region'] in ('us-ord', 'us-sea') for b in obj)
+    size = [b for b in obj if b['metrics'][0]['name'] == 'obj_bucket_size']
+    assert all(b['time_granularity'] == {'unit': 'min', 'value': 60} for b in size)
+    # dbaas: one token per region; nodebalancer: two regions; objectstorage: one account-wide token.
+    assert fake_api.issued_tokens == 4
+    token_bodies = [body for _, url, body, _ in fake_api.requests if url.endswith('/objectstorage/token')]
+    assert token_bodies == [{}]
 
 
 def test_failing_region_does_not_block_others(
@@ -119,6 +145,61 @@ def test_failing_region_does_not_block_others(
     aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.CRITICAL, count=1)
 
 
+def test_hourly_metrics_are_not_queried_every_run(
+    dd_run_check: Callable[..., None], aggregator: AggregatorStub, fake_api: FakeCloudPulse, monkeypatch
+) -> None:
+    instance = {'personal_access_token': 'test-pat', 'services': [{'service_type': 'objectstorage'}]}
+    check = AkamaiCloudPulseCheck('akamai_cloud_pulse', {}, [instance])
+    dd_run_check(check)
+    aggregator.reset()
+
+    # Two minutes later only the per-minute metrics are due again.
+    real_time = time.time
+    monkeypatch.setattr(time, 'time', lambda: real_time() + 120)
+    before = len(_metric_requests(fake_api))
+    dd_run_check(check)
+    queried = {m['name'] for b in _metric_requests(fake_api)[before:] for m in b['metrics']}
+    assert 'obj_requests_get' in queried
+    assert 'obj_bucket_size' not in queried
+    assert 'obj_ttfb_average' not in queried
+    assert not aggregator.metrics('akamai_cloud_pulse.objectstorage.bucket_size')
+
+
+def test_objectstorage_entity_filters(
+    dd_run_check: Callable[..., None], aggregator: AggregatorStub, fake_api: FakeCloudPulse
+) -> None:
+    instance = {
+        'personal_access_token': 'test-pat',
+        'services': [
+            {
+                'service_type': 'objectstorage',
+                'entity_ids': ['logs.us-ord-1.linodeobjects.com', 'archive.us-sea-1.linodeobjects.com'],
+                'entity_regions': ['us-ord'],
+                'metrics': ['obj_bucket_size'],
+            }
+        ],
+    }
+    check = AkamaiCloudPulseCheck('akamai_cloud_pulse', {}, [instance])
+    dd_run_check(check)
+
+    bodies = _metric_requests(fake_api)
+    assert [(b['entity_region'], b['entity_ids']) for b in bodies] == [('us-ord', ['logs.us-ord-1.linodeobjects.com'])]
+    aggregator.assert_metric('akamai_cloud_pulse.objectstorage.bucket_size', count=1)
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.objectstorage.bucket_size', 'bucket:logs')
+
+
+def test_entity_regions_rejected_for_other_services(
+    dd_run_check: Callable[..., None], fake_api: FakeCloudPulse
+) -> None:
+    instance = {
+        'personal_access_token': 'test-pat',
+        'services': [{'service_type': 'dbaas', 'entity_regions': ['us-ord']}],
+    }
+    check = AkamaiCloudPulseCheck('akamai_cloud_pulse', {}, [instance])
+    with pytest.raises(Exception, match='only supported for objectstorage'):
+        dd_run_check(check)
+
+
 def test_second_run_is_throttled(
     dd_run_check: Callable[..., None], aggregator: AggregatorStub, instance: InstanceType, fake_api: FakeCloudPulse
 ) -> None:
@@ -130,7 +211,7 @@ def test_second_run_is_throttled(
     dd_run_check(check)
     assert len(_metric_requests(fake_api)) == first
     assert not aggregator.metric_names
-    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.OK, count=2)
+    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.OK, count=3)
 
 
 def test_explicit_entities_and_metrics(
@@ -165,7 +246,7 @@ def test_unauthorized_pat_reports_critical(
     dd_run_check(check)
 
     assert not aggregator.metric_names
-    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.CRITICAL, count=2)
+    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.CRITICAL, count=3)
 
 
 def test_expired_token_is_renewed_once(
