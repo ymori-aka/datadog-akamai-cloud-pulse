@@ -82,3 +82,26 @@ Each aggregate is validated per metric. Choose the aggregate from
 
 Headers: `X-RateLimit-Limit: 300`, `X-RateLimit-Remaining`, `Retry-After`.
 The window length is not documented.
+
+## Object Storage (`objectstorage`)
+
+Observed 2026-09-16. Not yet collected by the check.
+
+- The entity ID is the bucket hostname (for example `my-bucket.jp-tyo-1.linodeobjects.com`),
+  not a number. List buckets with `GET /v4/object-storage/buckets`; the `hostname` field matches.
+- **Token**: the body must be `{}`. Passing `entity_ids` returns
+  `400 entity_ids are not supported for service type objectstorage`,
+  even though the API reference documents them. The token covers every bucket on the account.
+- **Metrics request**:
+  - `entity_region` is required (`400 entity_region is required ...`).
+  - `entity_ids` with bucket hostnames can be added to narrow the result.
+  - `filters` on `entity_id` is rejected (`400 Invalid filter`).
+- A region without Cloud Pulse support for Object Storage returns `200` with an empty result.
+- Values can be `null` (for example the oldest hourly bucket).
+- Dimensions: `endpoint` on every metric, plus `request_type` / `response_type` on
+  `obj_requests_num`, `obj_requests_rps`, and `obj_responses_num`.
+- Scrape intervals:
+  - `obj_bucket_size`, `obj_bucket_num_objects`: 3600s. Use hourly granularity; the latest
+    complete value is 1-2 hours old.
+  - `obj_ttfb_average`: 900s.
+  - Everything else: 60s.
