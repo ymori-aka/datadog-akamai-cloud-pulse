@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "created_at": "2026-09-16",
+  "last_updated_at": "2026-09-16",
+  "title": "Cloud Pulse API unreachable",
+  "description": "Notifies when the check cannot collect Cloud Pulse metrics, most often because the personal access token expired or lost a scope.",
+  "definition": {
+    "name": "[Akamai Cloud Pulse] Cannot collect {{service_type.name}} metrics",
+    "type": "service check",
+    "query": "\"akamai_cloud_pulse.can_connect\".over(\"*\").by(\"service_type\").last(3).count_by_status()",
+    "message": "The Agent could not collect Akamai Cloud Pulse metrics for `{{service_type.name}}`.\n\n{{check_message}}\n\nTo resolve:\n1. Confirm the personal access token has not expired.\n2. Confirm it has `monitor:read_only` and read-only access to the service.\n3. Run `datadog-agent check akamai_cloud_pulse` on the Agent host.",
+    "tags": [
+      "integration:akamai_cloud_pulse"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 2,
+        "ok": 1,
+        "warning": 1
+      },
+      "notify_audit": false,
+      "on_missing_data": "default",
+      "include_tags": true,
+      "new_group_delay": 60,
+      "renotify_interval": 0,
+      "silenced": {}
+    },
+    "priority": null
+  },
+  "tags": [
+    "integration:akamai-cloud-pulse"
+  ]
+}

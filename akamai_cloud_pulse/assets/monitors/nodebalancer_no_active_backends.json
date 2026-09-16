@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "created_at": "2026-09-16",
+  "last_updated_at": "2026-09-16",
+  "title": "NodeBalancer has no active backends",
+  "description": "Notifies when a NodeBalancer port has no healthy backends, which means clients on that port get errors.",
+  "definition": {
+    "name": "[Akamai Cloud Pulse] NodeBalancer {{entity_label.name}} port {{port.name}} has no active backends",
+    "type": "query alert",
+    "query": "max(last_15m):max:akamai_cloud_pulse.nodebalancer.total_active_backends{*} by {entity_label,port} < 1",
+    "message": "NodeBalancer `{{entity_label.name}}` has no healthy backends on port `{{port.name}}`.\n\nCheck the backend nodes and the health check settings of this NodeBalancer config.",
+    "tags": [
+      "integration:akamai_cloud_pulse"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 1
+      },
+      "notify_audit": false,
+      "on_missing_data": "default",
+      "include_tags": true,
+      "new_group_delay": 60,
+      "renotify_interval": 0,
+      "silenced": {}
+    },
+    "priority": null
+  },
+  "tags": [
+    "integration:akamai-cloud-pulse"
+  ]
+}

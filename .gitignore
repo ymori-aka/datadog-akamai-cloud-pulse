@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+.coverage
+.env
+*.local.yaml
+akamai_cloud_pulse/dist/
+.mypy_cache/
+.ruff_cache/

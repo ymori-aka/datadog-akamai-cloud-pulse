@@ -1,0 +1,15 @@
+[env.collectors.datadog-checks]
+check-types = true
+mypy-args = [
+    "--explicit-package-bases",
+    "--ignore-missing-imports",
+]
+mypy-files = [
+    "datadog_checks/akamai_cloud_pulse/check.py",
+]
+mypy-deps = [
+    "types-requests",
+]
+
+[[envs.default.matrix]]
+python = ["3.13"]

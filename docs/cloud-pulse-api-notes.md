@@ -1,0 +1,81 @@
+# Akamai Cloud Pulse API notes
+
+Observed 2026-09-16 against the public Cloud Pulse API.
+
+## Flow
+
+1. `GET https://api.linode.com/v4/monitor/services` — service types available to the account.
+   Observed: `dbaas`, `nodebalancer`, `objectstorage`, `logs`. Response includes
+   `alert.polling_interval_seconds` (min 300).
+2. `GET https://api.linode.com/v4/monitor/services/{service_type}/metric-definitions`
+   — fields: `metric`, `label`, `unit`, `metric_type`, `scrape_interval`, `is_alertable`,
+   `available_aggregate_functions`, `dimensions[].dimension_label`.
+3. `POST https://api.linode.com/v4/monitor/services/{service_type}/token`
+   body `{"entity_ids": [...]}` (max 100, min 1; objectstorage accepts `{}`).
+   Returns `{"token": "..."}`. Opaque (not a JWT). Documented lifetime: 6 hours.
+   Scope: `monitor:read_only` + read access to every entity listed.
+4. `POST https://monitor-api.linode.com/v2/monitor/services/{service_type}/metrics`
+   with `Authorization: Bearer <token from step 3>`.
+
+`v4` and `v4beta` both work for steps 1-3. Use `v2` (GA) for step 4.
+
+## Metrics request
+
+```json
+{
+  "metrics": [{"name": "cpu_usage", "aggregate_function": "avg"}],
+  "entity_ids": [1001],
+  "relative_time_duration": {"unit": "min", "value": 15},
+  "time_granularity": {"unit": "min", "value": 5},
+  "group_by": ["entity_id", "node_type"]
+}
+```
+
+Response is Prometheus-like (`resultType: matrix`):
+
+- `metric.metric_name` is prefixed with the aggregate: `avg_cpu_usage`, `sum_nb_ingress_traffic_rate`.
+- `metric.entity_id` is a **string**.
+- `values` is `[[unix_ts, "string_value"], ...]`.
+- Without `group_by`, series are merged across entities and carry no `entity_id` label,
+  so always group by `entity_id`.
+- dbaas returns `node_id` (e.g. `primary-5`) even when only `node_type` is grouped.
+- Timestamps are aligned to request time, not to wall-clock buckets.
+- Both edges can be partial. For nodebalancer (5 min buckets), the newest bucket
+  (a few seconds old) read `0` while the previous one read 162 Bps. The check
+  submits the newest point that is at least one bucket old.
+- At most **5 metrics per request** (`400 Maximum limit of 5 metrics exceeded`).
+- `group_by` accepts only `entity_id` and declared dimension labels
+  (`node_id` is rejected even though it is returned). A dimension that one of the
+  requested metrics lacks is accepted.
+- Without `time_granularity`, points are returned at the scrape interval.
+
+## Metric definitions (all `gauge`)
+
+| service | metric | unit | aggregates | scrape | dimensions |
+|---|---|---|---|---|---|
+| dbaas | cpu_usage, read_iops, write_iops | %, IOPS | avg only | 60s | node_type |
+| dbaas | memory_usage, disk_usage | % | avg/max/min/sum | 60s | node_type |
+| dbaas | available_memory, available_disk | GB | avg/max/min/sum | 60s | node_type |
+| nodebalancer | nb_{ingress,egress}[_tcp\|_udp]_traffic_rate | Bps | sum only | 300s | port, [protocol], config_id |
+| nodebalancer | nb_new[_tcp\|_udp]_sessions_per_second | sessions/s | sum only | 300s | port, [protocol], config_id |
+| nodebalancer | nb_total_active_sessions, nb_active_{tcp,udp}_sessions | Count | avg/min/max/sum | 300s | port, [protocol], config_id |
+| nodebalancer | nb_total_active_backends, nb_active_{tcp,udp}_backends | Count | avg/min/max/sum | 300s | port, [protocol], config_id |
+
+`protocol` is a dimension only on the non-TCP/UDP-specific metrics.
+Each aggregate is validated per metric. Choose the aggregate from
+`available_aggregate_functions`; do not hardcode it.
+
+## Errors
+
+| case | endpoint | status | body |
+|---|---|---|---|
+| unknown / inaccessible entity | token | 403 | `errors[].reason = "The following entity_ids are not valid - [...]"` |
+| invalid / expired token | metrics | 401 | `"Invalid Token"` → re-issue the token and retry once |
+| token for a different service_type | metrics | 403 | `"Token unauthorized for requested service type"` |
+| unsupported aggregate | metrics | 400 | lists the supported functions |
+| expired / revoked PAT | api.linode.com | 401 | → service check CRITICAL |
+
+## Rate limit (metrics endpoint)
+
+Headers: `X-RateLimit-Limit: 300`, `X-RateLimit-Remaining`, `Retry-After`.
+The window length is not documented.

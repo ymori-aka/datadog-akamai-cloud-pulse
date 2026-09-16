@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": 2001,
+      "label": "lke100-abc",
+      "region": "us-ord",
+      "lke_cluster": {
+        "id": 100,
+        "label": "shop",
+        "type": "lkecluster"
+      }
+    },
+    {
+      "id": 2002,
+      "label": "standalone-nb",
+      "region": "us-sea",
+      "lke_cluster": null
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 2
+}

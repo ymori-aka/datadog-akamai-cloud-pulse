@@ -1,0 +1,12 @@
+[overrides.display-name]
+akamai_cloud_pulse = "Akamai Cloud Pulse"
+
+[overrides.metrics-prefix]
+akamai_cloud_pulse = "akamai_cloud_pulse."
+
+[overrides.manifest.platforms]
+akamai_cloud_pulse = [
+    "linux",
+    "windows",
+    "mac_os",
+]

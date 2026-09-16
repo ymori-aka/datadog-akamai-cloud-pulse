@@ -1,0 +1,340 @@
+# (C) Datadog, Inc. 2026-present
+# All rights reserved
+# Licensed under a 3-clause BSD style license (see LICENSE)
+from __future__ import annotations
+
+import math
+import time
+from typing import Any
+
+from requests.exceptions import HTTPError, RequestException
+
+from datadog_checks.base import AgentCheck, ConfigurationError
+from datadog_checks.base.types import InitConfigType, InstanceType
+
+from .config_models import ConfigMixin
+
+# Cloud Pulse rejects metric requests with more than 5 metrics.
+MAX_METRICS_PER_REQUEST = 5
+# The token endpoint accepts at most 100 entity IDs.
+MAX_ENTITIES_PER_TOKEN = 100
+# Tokens are documented to live for 6 hours; renew well before that.
+TOKEN_TTL_SECONDS = 5 * 60 * 60
+DEFAULT_API_URL = 'https://api.linode.com/v4'
+DEFAULT_MONITOR_API_URL = 'https://monitor-api.linode.com/v2'
+DEFAULT_ENTITY_REFRESH_INTERVAL = 3600
+# Preferred aggregate when a metric supports several.
+AGGREGATE_PREFERENCE = ('avg', 'sum', 'max', 'min')
+
+# Per service: where to list entities and which prefix to strip from Cloud Pulse metric names.
+SERVICES: dict[str, dict[str, Any]] = {
+    'dbaas': {
+        'list_path': '/databases/instances',
+        'metric_prefix': '',
+    },
+    'nodebalancer': {
+        'list_path': '/nodebalancers',
+        'metric_prefix': 'nb_',
+    },
+}
+
+
+class CloudPulseAuthError(Exception):
+    """The personal access token was rejected."""
+
+
+class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
+    __NAMESPACE__ = 'akamai_cloud_pulse'
+
+    SERVICE_CHECK_CAN_CONNECT = 'can_connect'
+
+    def __init__(self, name: str, init_config: InitConfigType, instances: list[InstanceType]) -> None:
+        super().__init__(name, init_config, instances)
+        # service_type -> list of metric definitions
+        self._definitions: dict[str, list[dict[str, Any]]] = {}
+        # service_type -> {entity_id: [tags]}
+        self._entities: dict[str, dict[int, list[str]]] = {}
+        self._entities_refreshed_at: dict[str, float] = {}
+        # (service_type, entity_ids) -> (token, expires_at)
+        self._tokens: dict[tuple[str, tuple[int, ...]], tuple[str, float]] = {}
+        # service_type -> earliest time the next metrics query is worthwhile
+        self._next_query_at: dict[str, float] = {}
+        self._api_url = DEFAULT_API_URL
+        self._monitor_api_url = DEFAULT_MONITOR_API_URL
+        self._entity_refresh_interval = DEFAULT_ENTITY_REFRESH_INTERVAL
+        self.check_initializations.append(self._initialize)
+
+    def _initialize(self) -> None:
+        self._api_url = (self.config.api_url or DEFAULT_API_URL).rstrip('/')
+        self._monitor_api_url = (self.config.monitor_api_url or DEFAULT_MONITOR_API_URL).rstrip('/')
+        self._entity_refresh_interval = self.config.entity_refresh_interval or DEFAULT_ENTITY_REFRESH_INTERVAL
+        for service in self.config.services:
+            if service.service_type not in SERVICES:
+                raise ConfigurationError(
+                    f'Unsupported service_type `{service.service_type}`. Supported: {", ".join(sorted(SERVICES))}'
+                )
+
+    def check(self, _: InstanceType) -> None:
+        for service in self.config.services:
+            service_type = service.service_type
+            sc_tags = [f'service_type:{service_type}', *(self.config.tags or ())]
+            try:
+                self._collect_service(service)
+            except CloudPulseAuthError as e:
+                self.service_check(self.SERVICE_CHECK_CAN_CONNECT, AgentCheck.CRITICAL, tags=sc_tags, message=str(e))
+            except (HTTPError, RequestException, ValueError) as e:
+                self.log.warning('Failed to collect Cloud Pulse metrics for %s: %s', service_type, e)
+                self.service_check(self.SERVICE_CHECK_CAN_CONNECT, AgentCheck.CRITICAL, tags=sc_tags, message=str(e))
+            else:
+                self.service_check(self.SERVICE_CHECK_CAN_CONNECT, AgentCheck.OK, tags=sc_tags)
+
+    # ---- collection -------------------------------------------------------
+
+    def _collect_service(self, service: Any) -> None:
+        service_type = service.service_type
+        now = time.time()
+
+        definitions = self._metric_definitions(service_type)
+        entities = self._resolve_entities(service, now)
+        if not entities:
+            self.log.info('No %s entities to monitor', service_type)
+            return
+
+        if now < self._next_query_at.get(service_type, 0):
+            return
+
+        if service.metrics:
+            wanted = set(service.metrics)
+            unknown = wanted - {d['metric'] for d in definitions}
+            if unknown:
+                self.log.warning('Unknown %s metrics ignored: %s', service_type, ', '.join(sorted(unknown)))
+            definitions = [d for d in definitions if d['metric'] in wanted]
+
+        # Metrics with different scrape intervals are queried separately so each
+        # batch can use a granularity that matches its data.
+        by_interval: dict[int, list[dict[str, Any]]] = {}
+        for definition in definitions:
+            by_interval.setdefault(_scrape_seconds(definition), []).append(definition)
+
+        entity_ids = sorted(entities)
+        for scrape_seconds, defs in sorted(by_interval.items()):
+            granularity_min = max(1, math.ceil(scrape_seconds / 60))
+            for i in range(0, len(defs), MAX_METRICS_PER_REQUEST):
+                batch = defs[i : i + MAX_METRICS_PER_REQUEST]
+                for j in range(0, len(entity_ids), MAX_ENTITIES_PER_TOKEN):
+                    ids = tuple(entity_ids[j : j + MAX_ENTITIES_PER_TOKEN])
+                    self._query_and_submit(service_type, ids, batch, granularity_min, entities, now)
+
+        shortest = min(by_interval) if by_interval else 60
+        self._next_query_at[service_type] = now + max(60, shortest)
+
+    def _query_and_submit(
+        self,
+        service_type: str,
+        entity_ids: tuple[int, ...],
+        definitions: list[dict[str, Any]],
+        granularity_min: int,
+        entities: dict[int, list[str]],
+        now: float,
+    ) -> None:
+        by_name = {d['metric']: d for d in definitions}
+        group_by = ['entity_id']
+        for definition in definitions:
+            for dim in definition.get('dimensions') or []:
+                label = dim['dimension_label']
+                if label not in group_by:
+                    group_by.append(label)
+
+        body = {
+            'metrics': [{'name': d['metric'], 'aggregate_function': _pick_aggregate(d)} for d in definitions],
+            'entity_ids': list(entity_ids),
+            'relative_time_duration': {'unit': 'min', 'value': granularity_min * 3},
+            'time_granularity': {'unit': 'min', 'value': granularity_min},
+            'group_by': group_by,
+        }
+        result = self._fetch_metrics(service_type, entity_ids, body)
+
+        # The newest bucket is usually still being filled (it can read 0), so
+        # only submit points that are at least one full bucket old.
+        cutoff = now - granularity_min * 60
+        prefix = SERVICES[service_type]['metric_prefix']
+        for series in result:
+            labels = dict(series.get('metric') or {})
+            raw_name = labels.pop('metric_name', '')
+            aggregate, _, cp_name = raw_name.partition('_')
+            if cp_name not in by_name:
+                self.log.debug('Skipping unexpected series %s', raw_name)
+                continue
+
+            point = _latest_point(series.get('values') or [], cutoff)
+            if point is None:
+                continue
+
+            entity_id = labels.pop('entity_id', None)
+            tags = list(self.config.tags or ())
+            if entity_id is not None:
+                tags.extend(entities.get(int(entity_id), [f'entity_id:{entity_id}']))
+            tags.extend(f'{k}:{v}' for k, v in sorted(labels.items()) if v != '')
+            tags.append(f'aggregate_function:{aggregate}')
+
+            name = cp_name[len(prefix) :] if prefix and cp_name.startswith(prefix) else cp_name
+            self.gauge(f'{service_type}.{name}', point, tags=tags)
+
+    def _fetch_metrics(self, service_type: str, entity_ids: tuple[int, ...], body: dict[str, Any]) -> list[Any]:
+        url = f'{self._monitor_api_url}/monitor/services/{service_type}/metrics'
+        for attempt in (1, 2):
+            token = self._token(service_type, entity_ids)
+            response = self.http.post(url, json=body, extra_headers={'Authorization': f'Bearer {token}'})
+            if response.status_code == 401 and attempt == 1:
+                # Token expired early or was revoked: issue a new one and retry once.
+                self._tokens.pop((service_type, entity_ids), None)
+                continue
+            _raise_for_status(response)
+            payload = response.json()
+            if payload.get('isPartial'):
+                self.log.debug('Partial Cloud Pulse response for %s', service_type)
+            return (payload.get('data') or {}).get('result') or []
+        return []
+
+    # ---- Linode API -------------------------------------------------------
+
+    def _api_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        response = self.http.get(
+            f'{self._api_url}{path}',
+            params=params,
+            extra_headers={'Authorization': f'Bearer {self.config.personal_access_token}'},
+        )
+        _raise_for_status(response)
+        return response.json()
+
+    def _api_get_all(self, path: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page, pages = 1, 1
+        while page <= pages:
+            payload = self._api_get(path, {'page': page, 'page_size': 500})
+            items.extend(payload.get('data') or [])
+            pages = payload.get('pages') or 1
+            page += 1
+        return items
+
+    def _metric_definitions(self, service_type: str) -> list[dict[str, Any]]:
+        if service_type not in self._definitions:
+            self._definitions[service_type] = self._api_get_all(f'/monitor/services/{service_type}/metric-definitions')
+        return self._definitions[service_type]
+
+    def _token(self, service_type: str, entity_ids: tuple[int, ...]) -> str:
+        key = (service_type, entity_ids)
+        cached = self._tokens.get(key)
+        if cached and cached[1] > time.time():
+            return cached[0]
+
+        response = self.http.post(
+            f'{self._api_url}/monitor/services/{service_type}/token',
+            json={'entity_ids': list(entity_ids)},
+            extra_headers={'Authorization': f'Bearer {self.config.personal_access_token}'},
+        )
+        _raise_for_status(response)
+        token = response.json()['token']
+        self._tokens[key] = (token, time.time() + TOKEN_TTL_SECONDS)
+        return token
+
+    def _resolve_entities(self, service: Any, now: float) -> dict[int, list[str]]:
+        service_type = service.service_type
+        refreshed_at = self._entities_refreshed_at.get(service_type)
+        if refreshed_at is not None and now - refreshed_at < self._entity_refresh_interval:
+            return self._entities[service_type]
+
+        try:
+            items = self._api_get_all(SERVICES[service_type]['list_path'])
+        except CloudPulseAuthError:
+            raise
+        except (HTTPError, RequestException, ValueError) as e:
+            if not service.entity_ids:
+                raise
+            # Discovery is only needed for tags when IDs are configured explicitly.
+            self.log.warning('Could not list %s entities, continuing without entity tags: %s', service_type, e)
+            items = []
+
+        discovered = {}
+        for item in items:
+            if service_type == 'dbaas' and item.get('status') not in (None, 'active'):
+                continue
+            discovered[int(item['id'])] = _entity_tags(service_type, item)
+
+        if service.entity_ids:
+            entities = {i: discovered.get(i, [f'entity_id:{i}']) for i in service.entity_ids}
+        else:
+            entities = discovered
+
+        self._entities[service_type] = entities
+        self._entities_refreshed_at[service_type] = now
+        return entities
+
+
+def _entity_tags(service_type: str, item: dict[str, Any]) -> list[str]:
+    tags = [f'entity_id:{item["id"]}']
+    if item.get('label'):
+        tags.append(f'entity_label:{item["label"]}')
+    if item.get('region'):
+        tags.append(f'region:{item["region"]}')
+    if service_type == 'dbaas':
+        if item.get('engine'):
+            tags.append(f'engine:{item["engine"]}')
+        if item.get('version'):
+            tags.append(f'engine_version:{item["version"]}')
+    elif service_type == 'nodebalancer':
+        cluster = item.get('lke_cluster') or {}
+        if cluster.get('id'):
+            tags.append(f'lke_cluster_id:{cluster["id"]}')
+        if cluster.get('label'):
+            tags.append(f'lke_cluster:{cluster["label"]}')
+    return tags
+
+
+def _scrape_seconds(definition: dict[str, Any]) -> int:
+    value = str(definition.get('scrape_interval') or '60s').strip()
+    units = {'s': 1, 'm': 60, 'h': 3600}
+    try:
+        if value[-1] in units:
+            return int(value[:-1]) * units[value[-1]]
+        return int(value)
+    except ValueError:
+        return 60
+
+
+def _pick_aggregate(definition: dict[str, Any]) -> str:
+    available = definition.get('available_aggregate_functions') or []
+    for aggregate in AGGREGATE_PREFERENCE:
+        if aggregate in available:
+            return aggregate
+    return available[0] if available else 'avg'
+
+
+def _latest_point(values: list[Any], cutoff: float) -> float | None:
+    latest_ts = None
+    latest_value = None
+    for ts, value in values:
+        ts = float(ts)
+        if ts > cutoff:
+            continue
+        if latest_ts is None or ts > latest_ts:
+            try:
+                latest_ts, latest_value = ts, float(value)
+            except (TypeError, ValueError):
+                continue
+    return latest_value
+
+
+def _raise_for_status(response: Any) -> None:
+    if response.status_code == 401:
+        raise CloudPulseAuthError(f'Unauthorized ({response.url}): check the personal access token and its scopes')
+    try:
+        response.raise_for_status()
+    except HTTPError as e:
+        detail = ''
+        try:
+            errors = response.json().get('errors') or []
+            detail = '; '.join(err.get('reason', '') for err in errors)
+        except ValueError:
+            pass
+        raise HTTPError(f'{e} {detail}'.strip(), response=response) from e

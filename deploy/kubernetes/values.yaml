@@ -1,0 +1,45 @@
+# Helm values for the Datadog chart (https://github.com/DataDog/helm-charts).
+# Runs the Akamai Cloud Pulse check once per cluster as a cluster check.
+#
+# Before installing:
+#   kubectl create namespace datadog
+#   kubectl -n datadog create secret generic datadog-secret --from-literal api-key=<DD_API_KEY>
+#   kubectl -n datadog create secret generic cloud-pulse --from-literal pat=<LINODE_PAT>
+#
+#   helm repo add datadog https://helm.datadoghq.com
+#   helm upgrade --install datadog datadog/datadog -n datadog -f values.yaml
+
+datadog:
+  site: datadoghq.com              # change to your Datadog site (datadoghq.eu, ap1.datadoghq.com, ...)
+  apiKeyExistingSecret: datadog-secret
+  clusterName: my-lke-cluster      # change me
+  clusterChecks:
+    enabled: true
+  # Lets the Agent resolve ENC[k8s_secret@...] handles.
+  secretBackend:
+    command: /readsecret_multiple_providers.sh
+    enableGlobalPermissions: false
+    roles:
+      - namespace: datadog
+        secrets:
+          - cloud-pulse
+
+agents:
+  image:
+    repository: ghcr.io/ymori-aka/datadog-agent-akamai-cloud-pulse
+    tag: "0.0.1"
+    doNotCheckTag: true
+
+clusterAgent:
+  enabled: true
+  confd:
+    akamai_cloud_pulse.yaml: |-
+      cluster_check: true
+      init_config:
+      instances:
+        - personal_access_token: ENC[k8s_secret@datadog/cloud-pulse/pat]
+          min_collection_interval: 60
+          empty_default_hostname: true
+          services:
+            - service_type: dbaas
+            - service_type: nodebalancer

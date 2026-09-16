@@ -1,0 +1,84 @@
+name: akamai_cloud_pulse
+files:
+- name: akamai_cloud_pulse.yaml
+  options:
+  - template: init_config
+    options:
+    - template: init_config/default
+  - template: instances
+    options:
+    - name: personal_access_token
+      required: true
+      secret: true
+      description: |
+        Akamai Cloud (Linode) personal access token.
+        Required scopes: `monitor:read_only`, plus read-only access to each monitored service
+        (for example `databases:read_only`, `nodebalancers:read_only`).
+      value:
+        type: string
+    - name: services
+      required: true
+      description: |
+        The Cloud Pulse service types to collect.
+        Supported values for `service_type`: `dbaas`, `nodebalancer`.
+
+        `entity_ids`: IDs of the entities to monitor. If omitted, all entities
+        of that service visible to the token are discovered automatically.
+
+        `metrics`: Cloud Pulse metric names to collect. If omitted, every metric
+        from the service's metric definitions is collected.
+      value:
+        type: array
+        items:
+          type: object
+          properties:
+          - name: service_type
+            type: string
+          - name: entity_ids
+            type: array
+            items:
+              type: integer
+          - name: metrics
+            type: array
+            items:
+              type: string
+          required:
+          - service_type
+        example:
+        - service_type: dbaas
+        - service_type: nodebalancer
+          entity_ids:
+          - 1234567
+    - name: api_url
+      description: Base URL of the Akamai Cloud (Linode) API.
+      value:
+        type: string
+        example: https://api.linode.com/v4
+    - name: monitor_api_url
+      description: Base URL of the Cloud Pulse metrics API.
+      value:
+        type: string
+        example: https://monitor-api.linode.com/v2
+    - name: entity_refresh_interval
+      description: How often, in seconds, to refresh entity labels and auto-discovered entities.
+      value:
+        type: integer
+        example: 3600
+    - template: instances/http
+    - template: instances/default
+      overrides:
+        min_collection_interval.description: |
+          This changes the collection interval of the check. For more information, see:
+          https://docs.datadoghq.com/developers/write_agent_check/#collection-interval
+
+          Cloud Pulse aggregates data into 1 to 5 minute buckets, so collecting more
+          often than every 60 seconds only consumes API rate limit.
+        min_collection_interval.value.example: 60
+        min_collection_interval.value.display_default: 15
+        empty_default_hostname.description: |
+          This forces the check to send metrics with no hostname.
+
+          Cloud Pulse metrics describe managed services, not the host running the Agent,
+          so this should normally be left `true`.
+        empty_default_hostname.enabled: true
+        empty_default_hostname.value.example: true

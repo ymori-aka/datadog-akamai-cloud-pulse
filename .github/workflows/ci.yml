@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ddev
+        run: pipx install ddev
+      - name: Configure ddev
+        run: |
+          ddev config set repos.extras "$GITHUB_WORKSPACE"
+          ddev config set repo extras
+      - name: Lint
+        run: ddev test --lint akamai_cloud_pulse
+      - name: Unit tests
+        run: ddev test akamai_cloud_pulse
+      - name: Validate config and models
+        run: |
+          ddev validate config akamai_cloud_pulse
+          ddev validate models akamai_cloud_pulse
+          ddev validate metadata akamai_cloud_pulse
