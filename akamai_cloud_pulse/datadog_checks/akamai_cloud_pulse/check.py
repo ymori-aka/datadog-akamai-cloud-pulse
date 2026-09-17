@@ -100,6 +100,7 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
             try:
                 self._collect_service(service)
             except CloudPulseAuthError as e:
+                self.log.warning('Cloud Pulse rejected the credentials for %s: %s', service_type, e)
                 self.service_check(self.SERVICE_CHECK_CAN_CONNECT, AgentCheck.CRITICAL, tags=sc_tags, message=str(e))
             except (HTTPError, RequestException, ValueError) as e:
                 self.log.warning('Failed to collect Cloud Pulse metrics for %s: %s', service_type, e)
