@@ -1,1 +1,0 @@
-Collect Object Storage (`objectstorage`) metrics. Bucket hostnames can be used in `entity_ids`, and the new `entity_regions` option limits the regions collected.
