@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "id": 300,
+      "label": "enterprise-a",
+      "region": "us-ord",
+      "k8s_version": "v1.33.1+lke1",
+      "tier": "enterprise"
+    },
+    {
+      "id": 301,
+      "label": "enterprise-b",
+      "region": "us-sea",
+      "k8s_version": "v1.33.1+lke1",
+      "tier": "enterprise"
+    },
+    {
+      "id": 302,
+      "label": "standard",
+      "region": "us-ord",
+      "k8s_version": "1.33",
+      "tier": "standard"
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 3
+}

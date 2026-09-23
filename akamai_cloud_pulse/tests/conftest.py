@@ -35,6 +35,11 @@ DIMENSION_VALUES = {
 OBJECT_STORAGE_UNSUPPORTED_REGIONS = {'us-sea'}
 
 
+# NOTE: fixtures/lke_metric_definitions.json is built from the LKE Enterprise
+# documentation, not from a live account: Cloud Pulse metrics for LKE Enterprise
+# are in limited availability and the account used for development has no access.
+
+
 def load_fixture(name: str) -> Any:
     return json.loads((FIXTURES / name).read_text())
 
@@ -56,7 +61,12 @@ def dd_environment() -> Iterator[InstanceType]:
 def instance() -> InstanceType:
     return {
         'personal_access_token': 'test-pat',
-        'services': [{'service_type': 'dbaas'}, {'service_type': 'nodebalancer'}, {'service_type': 'objectstorage'}],
+        'services': [
+            {'service_type': 'dbaas'},
+            {'service_type': 'nodebalancer'},
+            {'service_type': 'objectstorage'},
+            {'service_type': 'lke'},
+        ],
         'tags': ['team:test'],
     }
 
@@ -78,6 +88,7 @@ class FakeCloudPulse:
         self.regions.update(
             {item['hostname']: item['region'] for item in load_fixture('object_storage_buckets.json')['data']}
         )
+        self.regions.update({item['id']: item['region'] for item in load_fixture('lke_clusters.json')['data']})
 
     def get(self, url: str, **kwargs: Any) -> MockResponse:
         return self._handle('get', url, None, kwargs)
@@ -99,6 +110,8 @@ class FakeCloudPulse:
                 return _response(url, load_fixture('databases_instances.json'))
             if path == '/v4/nodebalancers':
                 return _response(url, load_fixture('nodebalancers.json'))
+            if path == '/v4/lke/clusters':
+                return _response(url, load_fixture('lke_clusters.json'))
             if path == '/v4/object-storage/buckets':
                 return _response(url, load_fixture('object_storage_buckets.json'))
             if path.endswith('/metric-definitions'):

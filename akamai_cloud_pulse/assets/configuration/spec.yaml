@@ -13,14 +13,17 @@ files:
       description: |
         Akamai Cloud (Linode) personal access token.
         Required scopes: `monitor:read_only`, plus read-only access to each monitored service
-        (for example `databases:read_only`, `nodebalancers:read_only`, `object_storage:read_only`).
+        (for example `databases:read_only`, `nodebalancers:read_only`, `object_storage:read_only`,
+        `lke:read_only`).
       value:
         type: string
     - name: services
       required: true
       description: |
         The Cloud Pulse service types to collect.
-        Supported values for `service_type`: `dbaas`, `nodebalancer`, `objectstorage`.
+        Supported values for `service_type`: `dbaas`, `nodebalancer`, `objectstorage`, `lke`.
+        `lke` covers LKE Enterprise clusters only, and requires access to the
+        Cloud Pulse limited availability program for LKE Enterprise.
 
         `entity_ids`: IDs of the entities to monitor. If omitted, all entities
         of that service visible to the token are discovered automatically.

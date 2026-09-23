@@ -18,11 +18,18 @@ Supported services:
 | `dbaas` | Managed Databases | CPU, memory, disk, IOPS per node |
 | `nodebalancer` | NodeBalancers | traffic rate, sessions, new sessions, active backends per port |
 | `objectstorage` | Object Storage | content stored, objects, requests, responses, throughput, time to first byte per bucket |
+| `lke` | LKE Enterprise | ready and not ready worker nodes, API server request rate, error rate, and availability |
 
 The check tags every metric with the entity ID, label, and region. It adds the
 database engine and version for databases, and the LKE cluster for NodeBalancers
 that LKE creates. Object Storage metrics are tagged with `bucket` and `endpoint`,
 and with `request_type` or `response_type` where Cloud Pulse provides them.
+LKE Enterprise metrics are tagged with the cluster label and Kubernetes version.
+
+> **LKE Enterprise is untested.** Cloud Pulse metrics for LKE Enterprise are in
+> [limited availability][14]; open a support ticket to join the program. The account
+> used to develop this check has no access, so `lke` support follows the documented
+> metric names but has not been run against a live cluster. Reports are welcome.
 
 ## Setup
 
@@ -34,6 +41,7 @@ Create an Akamai Cloud [personal access token][2] with these scopes:
 - `Databases`: Read Only (for `dbaas`)
 - `NodeBalancers`: Read Only (for `nodebalancer`)
 - `Object Storage`: Read Only (for `objectstorage`)
+- `Kubernetes`: Read Only (for `lke`)
 
 Access to the Cloud Pulse API may require enrollment, depending on your account.
 
@@ -70,6 +78,7 @@ In containers, bake the wheel into a custom Agent image. See [`deploy/`][4].
            entity_ids: [1234567]
          - service_type: objectstorage
            entity_regions: [us-east]
+         - service_type: lke
    ```
 
    - If you omit `entity_ids`, the check discovers every entity the token can see
@@ -79,6 +88,8 @@ In containers, bake the wheel into a custom Agent image. See [`deploy/`][4].
      (for example `my-bucket.us-east-1.linodeobjects.com`), and `entity_regions`
      limits the regions collected. Without them, every region that has a bucket is
      queried. Regions where Cloud Pulse does not support Object Storage return no data.
+   - `lke` only collects LKE Enterprise clusters. Standard LKE clusters have no
+     Cloud Pulse metrics and are skipped automatically.
    - Keep the token out of plain-text config with [secrets management][7], for
      example `personal_access_token: ENC[cloud_pulse_pat]`.
 
@@ -142,8 +153,8 @@ This integration does not include any events.
 - `assets/dashboards/akamai_cloud_pulse_overview.json`: overview dashboard.
   Create a blank dashboard, then use **Configure > Import dashboard JSON** to load it.
 - `assets/monitors/`: monitor templates for API failures, high database disk
-  usage, NodeBalancer ports with no healthy backends, and Object Storage buckets
-  returning 5xx errors.
+  usage, NodeBalancer ports with no healthy backends, Object Storage buckets
+  returning 5xx errors, and LKE Enterprise clusters with not ready worker nodes.
 
 ## Troubleshooting
 
@@ -153,6 +164,7 @@ This integration does not include any events.
 | `403` with `entity_ids are not valid` | A configured entity was deleted or the token cannot read it. |
 | No Object Storage metrics for a region | Cloud Pulse does not support Object Storage metrics in that region yet. |
 | Unauthorized when listing buckets | The token lacks the `Object Storage` read scope. |
+| No `lke` metrics at all | The account is not in the LKE Enterprise limited availability program, or the clusters are standard LKE. |
 | A metric is missing for some entities | The metric does not apply, for example UDP metrics on a NodeBalancer with only TCP configs. |
 
 Open an issue at [ymori-aka/datadog-akamai-cloud-pulse][13].
@@ -170,3 +182,4 @@ Open an issue at [ymori-aka/datadog-akamai-cloud-pulse][13].
 [11]: https://github.com/ymori-aka/datadog-akamai-cloud-pulse/blob/main/akamai_cloud_pulse/metadata.csv
 [12]: https://docs.datadoghq.com/metrics/custom_metrics/
 [13]: https://github.com/ymori-aka/datadog-akamai-cloud-pulse/issues
+[14]: https://techdocs.akamai.com/cloud-computing/docs/lke-e-metrics

@@ -45,6 +45,12 @@ SERVICES: dict[str, dict[str, Any]] = {
         'metric_prefix': 'nb_',
         'regional': False,
     },
+    'lke': {
+        'list_path': '/lke/clusters',
+        'id_field': 'id',
+        'metric_prefix': 'lke_e_',
+        'regional': False,
+    },
     'objectstorage': {
         'list_path': '/object-storage/buckets',
         'id_field': 'hostname',
@@ -315,6 +321,9 @@ class AkamaiCloudPulseCheck(AgentCheck, ConfigMixin):
         for item in items:
             if service_type == 'dbaas' and item.get('status') not in (None, 'active'):
                 continue
+            if service_type == 'lke' and item.get('tier') != 'enterprise':
+                # Cloud Pulse only reports metrics for LKE Enterprise clusters.
+                continue
             if not item.get(id_field):
                 continue
             discovered[str(item[id_field])] = _entity_tags(service_type, item)
@@ -350,6 +359,9 @@ def _entity_tags(service_type: str, item: dict[str, Any]) -> list[str]:
             tags.append(f'engine:{item["engine"]}')
         if item.get('version'):
             tags.append(f'engine_version:{item["version"]}')
+    elif service_type == 'lke':
+        if item.get('k8s_version'):
+            tags.append(f'kubernetes_version:{item["k8s_version"]}')
     elif service_type == 'nodebalancer':
         cluster = item.get('lke_cluster') or {}
         if cluster.get('id'):

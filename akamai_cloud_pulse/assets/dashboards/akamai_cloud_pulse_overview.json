@@ -1,6 +1,6 @@
 {
   "title": "Akamai Cloud Pulse - Overview",
-  "description": "Managed Database, NodeBalancer, and Object Storage metrics collected from Akamai Cloud Pulse.",
+  "description": "Managed Database, NodeBalancer, Object Storage, and LKE Enterprise metrics collected from Akamai Cloud Pulse.",
   "widgets": [
     {
       "id": 3,
@@ -15,7 +15,7 @@
             "id": 1,
             "definition": {
               "type": "note",
-              "content": "This dashboard shows [Akamai Cloud Pulse](https://techdocs.akamai.com/cloud-computing/docs/akamai-cloud-pulse) metrics for Managed Databases, NodeBalancers, and Object Storage on Akamai Cloud.\n\nValues are the most recent complete Cloud Pulse bucket (1 minute for databases and most Object Storage metrics, 5 minutes for NodeBalancers, 1 hour for Object Storage content), so they trail real time by up to one bucket.\n\nUse the template variables to filter by region, entity label, LKE cluster, or bucket.",
+              "content": "This dashboard shows [Akamai Cloud Pulse](https://techdocs.akamai.com/cloud-computing/docs/akamai-cloud-pulse) metrics for Managed Databases, NodeBalancers, Object Storage, and LKE Enterprise clusters on Akamai Cloud.\n\nValues are the most recent complete Cloud Pulse bucket (1 minute for databases and most Object Storage metrics, 5 minutes for NodeBalancers, 1 hour for Object Storage content), so they trail real time by up to one bucket.\n\nUse the template variables to filter by region, entity label, LKE cluster, or bucket.",
               "background_color": "white",
               "font_size": "14",
               "text_align": "left",
@@ -1117,6 +1117,264 @@
         "y": 22,
         "width": 12,
         "height": 12
+      }
+    },
+    {
+      "id": 40,
+      "definition": {
+        "title": "LKE Enterprise",
+        "background_color": "vivid_yellow",
+        "show_title": true,
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 34,
+            "definition": {
+              "title": "Ready worker nodes",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.lke.ready_worker_nodes{$region,$entity_label}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "width": 4,
+              "height": 2
+            }
+          },
+          {
+            "id": 35,
+            "definition": {
+              "title": "Not ready worker nodes",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.lke.not_ready_worker_nodes{$region,$entity_label}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 4,
+              "y": 0,
+              "width": 4,
+              "height": 2
+            }
+          },
+          {
+            "id": 36,
+            "definition": {
+              "title": "API server availability (%)",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 2,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "min:akamai_cloud_pulse.lke.apiserver_availability_percent{$region,$entity_label}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 8,
+              "y": 0,
+              "width": 4,
+              "height": 2
+            }
+          },
+          {
+            "id": 37,
+            "definition": {
+              "title": "Worker nodes by cluster",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "ready"
+                    },
+                    {
+                      "formula": "q1",
+                      "alias": "not ready"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.lke.ready_worker_nodes{$region,$entity_label} by {entity_label}"
+                    },
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.lke.not_ready_worker_nodes{$region,$entity_label} by {entity_label}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 2,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 38,
+            "definition": {
+              "title": "API server requests (req/s)",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "requests"
+                    },
+                    {
+                      "formula": "q1",
+                      "alias": "errors"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.lke.apiserver_request_rate{$region,$entity_label} by {entity_label}"
+                    },
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.lke.apiserver_request_error_rate{$region,$entity_label} by {entity_label}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 6,
+              "y": 2,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 39,
+            "definition": {
+              "title": "API server availability (%)",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "availability"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "avg:akamai_cloud_pulse.lke.apiserver_availability_percent{$region,$entity_label} by {entity_label}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 5,
+              "width": 12,
+              "height": 3
+            }
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 34,
+        "width": 12,
+        "height": 9
       }
     }
   ],

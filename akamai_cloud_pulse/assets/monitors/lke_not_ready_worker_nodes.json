@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "created_at": "2026-09-24",
+  "last_updated_at": "2026-09-24",
+  "title": "LKE Enterprise worker nodes are not ready",
+  "description": "Notifies when an LKE Enterprise cluster reports worker nodes that cannot run workloads.",
+  "definition": {
+    "name": "[Akamai Cloud Pulse] Cluster {{entity_label.name}} has not ready worker nodes",
+    "type": "query alert",
+    "query": "max(last_15m):max:akamai_cloud_pulse.lke.not_ready_worker_nodes{*} by {entity_label} > 0",
+    "message": "LKE Enterprise cluster `{{entity_label.name}}` reports {{value}} worker nodes that are not ready.\n\nCheck the nodes with `kubectl get nodes` and review recycles or upgrades in progress.",
+    "tags": [
+      "integration:akamai_cloud_pulse"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 0
+      },
+      "notify_audit": false,
+      "on_missing_data": "default",
+      "include_tags": true,
+      "new_group_delay": 300,
+      "renotify_interval": 0,
+      "silenced": {}
+    },
+    "priority": null
+  },
+  "tags": [
+    "integration:akamai-cloud-pulse"
+  ]
+}

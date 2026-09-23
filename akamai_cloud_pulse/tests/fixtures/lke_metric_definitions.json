@@ -1,0 +1,75 @@
+{
+  "data": [
+    {
+      "metric": "lke_e_ready_worker_nodes",
+      "label": "Ready worker nodes",
+      "unit": "count",
+      "metric_type": "gauge",
+      "scrape_interval": "60s",
+      "is_alertable": true,
+      "available_aggregate_functions": [
+        "avg",
+        "min",
+        "max",
+        "sum"
+      ],
+      "dimensions": []
+    },
+    {
+      "metric": "lke_e_not_ready_worker_nodes",
+      "label": "Not ready worker nodes",
+      "unit": "count",
+      "metric_type": "gauge",
+      "scrape_interval": "60s",
+      "is_alertable": true,
+      "available_aggregate_functions": [
+        "avg",
+        "min",
+        "max",
+        "sum"
+      ],
+      "dimensions": []
+    },
+    {
+      "metric": "lke_e_apiserver_request_rate",
+      "label": "API server request rate",
+      "unit": "request/s",
+      "metric_type": "gauge",
+      "scrape_interval": "60s",
+      "is_alertable": true,
+      "available_aggregate_functions": [
+        "avg",
+        "sum"
+      ],
+      "dimensions": []
+    },
+    {
+      "metric": "lke_e_apiserver_request_error_rate",
+      "label": "API server request error rate",
+      "unit": "failed requests/s",
+      "metric_type": "gauge",
+      "scrape_interval": "60s",
+      "is_alertable": true,
+      "available_aggregate_functions": [
+        "avg",
+        "sum"
+      ],
+      "dimensions": []
+    },
+    {
+      "metric": "lke_e_apiserver_availability_percent",
+      "label": "API server availability",
+      "unit": "%",
+      "metric_type": "gauge",
+      "scrape_interval": "60s",
+      "is_alertable": true,
+      "available_aggregate_functions": [
+        "avg"
+      ],
+      "dimensions": []
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 5
+}

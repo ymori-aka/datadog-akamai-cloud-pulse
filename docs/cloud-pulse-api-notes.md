@@ -110,3 +110,21 @@ Observed 2026-09-16. Collected by the check since 0.2.0.
   can select different minutes, so two metrics from the same bucket may not line up.
 - `obj_requests_num` grouped by `request_type` matches the per-type metrics
   (`obj_requests_get`, ...) for the same minute.
+
+## LKE Enterprise (`lke`)
+
+Checked 2026-09-24. Not verified against a live account.
+
+- `GET /v4/monitor/services` returned only `dbaas`, `nodebalancer`, `objectstorage`
+  and `logs`, and `GET /v4/monitor/services/lke/metric-definitions` returned
+  `404 Not found`: Cloud Pulse metrics for LKE Enterprise are in limited
+  availability and must be requested through a support ticket.
+- The service type is `lke` (the name the Akamai OpenTelemetry collector uses).
+- Entities are LKE cluster IDs from `GET /v4/lke/clusters`. Only clusters with
+  `tier: enterprise` have metrics; standard clusters are skipped.
+- Documented metrics (units from the docs): `lke_e_ready_worker_nodes` (count),
+  `lke_e_not_ready_worker_nodes` (count), `lke_e_apiserver_request_rate` (request/s),
+  `lke_e_apiserver_request_error_rate` (failed requests/s),
+  `lke_e_apiserver_availability_percent` (%).
+- Aggregations, scrape intervals and dimensions are read from
+  `metric-definitions` at runtime, so they need no code change once access is granted.
