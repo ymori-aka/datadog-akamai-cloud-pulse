@@ -51,6 +51,12 @@ SERVICES: dict[str, dict[str, Any]] = {
         'metric_prefix': 'lke_e_',
         'regional': False,
     },
+    'logs': {
+        'list_path': '/monitor/streams',
+        'id_field': 'id',
+        'metric_prefix': '',
+        'regional': False,
+    },
     'objectstorage': {
         'list_path': '/object-storage/buckets',
         'id_field': 'hostname',
@@ -350,6 +356,16 @@ def _entity_tags(service_type: str, item: dict[str, Any]) -> list[str]:
     if service_type == 'objectstorage':
         if item.get('label'):
             tags.append(f'bucket:{item["label"]}')
+        return tags
+    if service_type == 'logs':
+        # Log streams have no region. Destination details are left out on purpose:
+        # they include access key IDs.
+        if item.get('label'):
+            tags.append(f'entity_label:{item["label"]}')
+        if item.get('type'):
+            tags.append(f'stream_type:{item["type"]}')
+        if item.get('status'):
+            tags.append(f'stream_status:{item["status"]}')
         return tags
 
     if item.get('label'):

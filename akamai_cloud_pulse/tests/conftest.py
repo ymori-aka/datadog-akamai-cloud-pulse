@@ -66,6 +66,7 @@ def instance() -> InstanceType:
             {'service_type': 'nodebalancer'},
             {'service_type': 'objectstorage'},
             {'service_type': 'lke'},
+            {'service_type': 'logs'},
         ],
         'tags': ['team:test'],
     }
@@ -110,6 +111,8 @@ class FakeCloudPulse:
                 return _response(url, load_fixture('databases_instances.json'))
             if path == '/v4/nodebalancers':
                 return _response(url, load_fixture('nodebalancers.json'))
+            if path == '/v4/monitor/streams':
+                return _response(url, load_fixture('log_streams.json'))
             if path == '/v4/lke/clusters':
                 return _response(url, load_fixture('lke_clusters.json'))
             if path == '/v4/object-storage/buckets':

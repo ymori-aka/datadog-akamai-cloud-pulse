@@ -128,3 +128,23 @@ Checked 2026-09-24. Not verified against a live account.
   `lke_e_apiserver_availability_percent` (%).
 - Aggregations, scrape intervals and dimensions are read from
   `metric-definitions` at runtime, so they need no code change once access is granted.
+
+## Log delivery (`logs`)
+
+Observed 2026-09-26 against a live account. Collected by the check since 0.3.0.
+
+- Entities are log streams from `GET /v4/monitor/streams`: numeric `id`, `label`,
+  `type` (for example `audit_logs`), `status`, and `destinations[]`. Listing streams
+  needs the `monitor:read_only` scope (per the API reference). Streams have no region.
+- `destinations[].details` contains `access_key_id`. Never put it in tags or logs.
+- The token accepts `entity_ids` (stream IDs), and the metrics request needs neither
+  `entity_region` nor a single-region restriction.
+- Metrics (all `gauge`, 60s scrape): `success_upload_count` (sum),
+  `error_upload_count` (sum), `error_upload_rate` (avg, unit `%` in the API even
+  though the documentation says KB). Dimension: `status_code`.
+- Data is sparse. An audit stream delivered 6-13 times per hour, so a 1-minute
+  query is usually empty. Series that never occurred (for example errors on a
+  healthy stream) are absent from the response, and the oldest points can be `null`.
+- The `status_code` label did not appear on the series returned for a healthy stream.
+- The Cloud Manager dashboard is "Log Delivery Status" (`GET /v4/monitor/services/logs/dashboards`).
+- Alert evaluation periods for logs are 2, 3 or 4 hours, which matches the sparse data.

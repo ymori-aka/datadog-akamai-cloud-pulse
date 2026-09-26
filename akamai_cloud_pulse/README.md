@@ -18,6 +18,7 @@ Supported services:
 | `dbaas` | Managed Databases | CPU, memory, disk, IOPS per node |
 | `nodebalancer` | NodeBalancers | traffic rate, sessions, new sessions, active backends per port |
 | `objectstorage` | Object Storage | content stored, objects, requests, responses, throughput, time to first byte per bucket |
+| `logs` | Log delivery streams | successful and failed upload counts, upload error rate per stream |
 | `lke` | LKE Enterprise | ready and not ready worker nodes, API server request rate, error rate, and availability |
 
 The check tags every metric with the entity ID, label, and region. It adds the
@@ -25,6 +26,8 @@ database engine and version for databases, and the LKE cluster for NodeBalancers
 that LKE creates. Object Storage metrics are tagged with `bucket` and `endpoint`,
 and with `request_type` or `response_type` where Cloud Pulse provides them.
 LKE Enterprise metrics are tagged with the cluster label and Kubernetes version.
+Log delivery metrics are tagged with the stream label, type, and status. Destination
+details are never tagged, because they include access key IDs.
 
 > **LKE Enterprise is untested.** Cloud Pulse metrics for LKE Enterprise are in
 > [limited availability][14]; open a support ticket to join the program. The account
@@ -42,6 +45,8 @@ Create an Akamai Cloud [personal access token][2] with these scopes:
 - `NodeBalancers`: Read Only (for `nodebalancer`)
 - `Object Storage`: Read Only (for `objectstorage`)
 - `Kubernetes`: Read Only (for `lke`)
+
+Listing log streams (`logs`) needs only the `Monitor` scope.
 
 Access to the Cloud Pulse API may require enrollment, depending on your account.
 
@@ -79,6 +84,7 @@ In containers, bake the wheel into a custom Agent image. See [`deploy/`][4].
          - service_type: objectstorage
            entity_regions: [us-east]
          - service_type: lke
+         - service_type: logs
    ```
 
    - If you omit `entity_ids`, the check discovers every entity the token can see
@@ -88,6 +94,7 @@ In containers, bake the wheel into a custom Agent image. See [`deploy/`][4].
      (for example `my-bucket.us-east-1.linodeobjects.com`), and `entity_regions`
      limits the regions collected. Without them, every region that has a bucket is
      queried. Regions where Cloud Pulse does not support Object Storage return no data.
+   - `logs` collects every log stream on the account. `entity_ids` are stream IDs.
    - `lke` only collects LKE Enterprise clusters. Standard LKE clusters have no
      Cloud Pulse metrics and are skipped automatically.
    - Keep the token out of plain-text config with [secrets management][7], for
@@ -128,6 +135,9 @@ In containers, bake the wheel into a custom Agent image. See [`deploy/`][4].
   point per hour.
 - Object Storage request and response metrics exist only when the bucket was
   used during the interval. Gaps mean no activity, not a collection failure.
+- Log delivery metrics behave the same way: a stream only reports an interval in
+  which it attempted a delivery, and the error series only exists once a delivery
+  has failed.
 
 ## Data Collected
 
@@ -154,7 +164,8 @@ This integration does not include any events.
   Create a blank dashboard, then use **Configure > Import dashboard JSON** to load it.
 - `assets/monitors/`: monitor templates for API failures, high database disk
   usage, NodeBalancer ports with no healthy backends, Object Storage buckets
-  returning 5xx errors, and LKE Enterprise clusters with not ready worker nodes.
+  returning 5xx errors, LKE Enterprise clusters with not ready worker nodes, and
+  log streams with failed deliveries.
 
 ## Troubleshooting
 
@@ -164,6 +175,7 @@ This integration does not include any events.
 | `403` with `entity_ids are not valid` | A configured entity was deleted or the token cannot read it. |
 | No Object Storage metrics for a region | Cloud Pulse does not support Object Storage metrics in that region yet. |
 | Unauthorized when listing buckets | The token lacks the `Object Storage` read scope. |
+| No `logs` metrics for a stream | The stream did not attempt a delivery in the last interval. Log delivery metrics are in limited availability; open a support ticket if the service is missing from `GET /v4/monitor/services`. |
 | No `lke` metrics at all | The account is not in the LKE Enterprise limited availability program, or the clusters are standard LKE. |
 | A metric is missing for some entities | The metric does not apply, for example UDP metrics on a NodeBalancer with only TCP configs. |
 

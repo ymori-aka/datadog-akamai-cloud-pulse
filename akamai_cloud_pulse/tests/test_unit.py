@@ -91,6 +91,18 @@ def test_check_collects_all_metrics(
             'aggregate_function:avg',
         ],
     )
+    # Log streams carry no region and are queried together; destination details are never tagged.
+    aggregator.assert_metric(
+        'akamai_cloud_pulse.logs.success_upload_count',
+        value=COMPLETE_VALUE,
+        count=2,
+    )
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.logs.success_upload_count', 'entity_id:501')
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.logs.success_upload_count', 'entity_label:audit-to-bucket')
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.logs.success_upload_count', 'stream_type:audit_logs')
+    aggregator.assert_metric_has_tag('akamai_cloud_pulse.logs.success_upload_count', 'stream_status:provisioning')
+    for metric in aggregator.metrics('akamai_cloud_pulse.logs.success_upload_count'):
+        assert not any(leak in t for t in metric.tags for leak in ('REDACTED', 'linodeobjects', 'destination'))
     # Standard LKE clusters have no Cloud Pulse metrics and are skipped.
     for metric in aggregator.metrics('akamai_cloud_pulse.lke.ready_worker_nodes'):
         assert 'entity_id:302' not in metric.tags
@@ -103,7 +115,7 @@ def test_check_collects_all_metrics(
     for metric in aggregator.metrics('akamai_cloud_pulse.dbaas.cpu_usage'):
         assert 'entity_id:1003' not in metric.tags
 
-    for service_type in ('dbaas', 'nodebalancer', 'objectstorage', 'lke'):
+    for service_type in ('dbaas', 'nodebalancer', 'objectstorage', 'lke', 'logs'):
         aggregator.assert_service_check(
             'akamai_cloud_pulse.can_connect',
             AgentCheck.OK,
@@ -126,8 +138,9 @@ def test_requests_respect_api_limits(
     # 7 dbaas metrics -> 2 requests (one region),
     # 15 nodebalancer metrics -> 3 requests x 2 regions,
     # 21 objectstorage metrics in 3 scrape intervals (2 + 1 + 18 metrics) -> 1 + 1 + 4 requests x 2 regions,
-    # 5 lke metrics -> 1 request x 2 regions.
-    assert len(bodies) == 2 + 6 + 12 + 2
+    # 5 lke metrics -> 1 request x 2 regions,
+    # 3 logs metrics -> 1 request (log streams have no region).
+    assert len(bodies) == 2 + 6 + 12 + 2 + 1
     for body in bodies:
         assert len(body['metrics']) <= 5
         assert body['group_by'][0] == 'entity_id'
@@ -143,8 +156,8 @@ def test_requests_respect_api_limits(
     size = [b for b in obj if b['metrics'][0]['name'] == 'obj_bucket_size']
     assert all(b['time_granularity'] == {'unit': 'min', 'value': 60} for b in size)
     # dbaas: one token per region; nodebalancer and lke: two regions each;
-    # objectstorage: one account-wide token.
-    assert fake_api.issued_tokens == 6
+    # logs: one token; objectstorage: one account-wide token.
+    assert fake_api.issued_tokens == 7
     token_bodies = [body for _, url, body, _ in fake_api.requests if url.endswith('/objectstorage/token')]
     assert token_bodies == [{}]
 
@@ -229,7 +242,7 @@ def test_second_run_is_throttled(
     dd_run_check(check)
     assert len(_metric_requests(fake_api)) == first
     assert not aggregator.metric_names
-    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.OK, count=4)
+    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.OK, count=5)
 
 
 def test_explicit_entities_and_metrics(
@@ -264,7 +277,7 @@ def test_unauthorized_pat_reports_critical(
     dd_run_check(check)
 
     assert not aggregator.metric_names
-    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.CRITICAL, count=4)
+    aggregator.assert_service_check('akamai_cloud_pulse.can_connect', AgentCheck.CRITICAL, count=5)
 
 
 def test_expired_token_is_renewed_once(

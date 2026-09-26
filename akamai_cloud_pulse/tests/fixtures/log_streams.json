@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": 501,
+      "label": "audit-to-bucket",
+      "type": "audit_logs",
+      "status": "active",
+      "version": 1,
+      "destinations": [
+        {
+          "id": 900,
+          "type": "akamai_object_storage",
+          "label": "audit-dest",
+          "details": {
+            "host": "us-ord-1.linodeobjects.com",
+            "bucket_name": "audit",
+            "path": "audit/",
+            "access_key_id": "REDACTED"
+          }
+        }
+      ]
+    },
+    {
+      "id": 502,
+      "label": "k8s-audit",
+      "type": "lke_audit_logs",
+      "status": "provisioning",
+      "version": 1,
+      "destinations": []
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 2
+}

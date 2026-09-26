@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "created_at": "2026-09-26",
+  "last_updated_at": "2026-09-26",
+  "title": "Log stream delivery is failing",
+  "description": "Notifies when a log stream reports failed delivery attempts to its destination.",
+  "definition": {
+    "name": "[Akamai Cloud Pulse] Log stream {{entity_label.name}} has failed deliveries",
+    "type": "query alert",
+    "query": "sum(last_4h):sum:akamai_cloud_pulse.logs.error_upload_count{*} by {entity_label} > 0",
+    "message": "Log stream `{{entity_label.name}}` had {{value}} failed delivery attempts in the last 4 hours.\n\nCheck the destination (bucket or HTTPS endpoint), its credentials, and its permissions.",
+    "tags": [
+      "integration:akamai_cloud_pulse"
+    ],
+    "options": {
+      "thresholds": {
+        "critical": 0
+      },
+      "notify_audit": false,
+      "on_missing_data": "default",
+      "include_tags": true,
+      "new_group_delay": 60,
+      "renotify_interval": 0,
+      "silenced": {}
+    },
+    "priority": null
+  },
+  "tags": [
+    "integration:akamai-cloud-pulse"
+  ]
+}

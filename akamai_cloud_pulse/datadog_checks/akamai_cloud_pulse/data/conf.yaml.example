@@ -23,7 +23,8 @@ instances:
 
     ## @param services - list of mappings - required
     ## The Cloud Pulse service types to collect.
-    ## Supported values for `service_type`: `dbaas`, `nodebalancer`, `objectstorage`, `lke`.
+    ## Supported values for `service_type`: `dbaas`, `nodebalancer`, `objectstorage`, `lke`, `logs`.
+    ## `logs` covers log delivery streams (`entity_ids` are stream IDs).
     ## `lke` covers LKE Enterprise clusters only, and requires access to the
     ## Cloud Pulse limited availability program for LKE Enterprise.
     ##

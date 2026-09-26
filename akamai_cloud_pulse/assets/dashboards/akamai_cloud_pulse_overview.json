@@ -1,6 +1,6 @@
 {
   "title": "Akamai Cloud Pulse - Overview",
-  "description": "Managed Database, NodeBalancer, Object Storage, and LKE Enterprise metrics collected from Akamai Cloud Pulse.",
+  "description": "Managed Database, NodeBalancer, Object Storage, LKE Enterprise, and Log Delivery metrics collected from Akamai Cloud Pulse.",
   "widgets": [
     {
       "id": 3,
@@ -15,7 +15,7 @@
             "id": 1,
             "definition": {
               "type": "note",
-              "content": "This dashboard shows [Akamai Cloud Pulse](https://techdocs.akamai.com/cloud-computing/docs/akamai-cloud-pulse) metrics for Managed Databases, NodeBalancers, Object Storage, and LKE Enterprise clusters on Akamai Cloud.\n\nValues are the most recent complete Cloud Pulse bucket (1 minute for databases and most Object Storage metrics, 5 minutes for NodeBalancers, 1 hour for Object Storage content), so they trail real time by up to one bucket.\n\nUse the template variables to filter by region, entity label, LKE cluster, or bucket.",
+              "content": "This dashboard shows [Akamai Cloud Pulse](https://techdocs.akamai.com/cloud-computing/docs/akamai-cloud-pulse) metrics for Managed Databases, NodeBalancers, Object Storage, LKE Enterprise clusters, and log delivery streams on Akamai Cloud.\n\nValues are the most recent complete Cloud Pulse bucket (1 minute for databases and most Object Storage metrics, 5 minutes for NodeBalancers, 1 hour for Object Storage content), so they trail real time by up to one bucket.\n\nUse the template variables to filter by region, entity label, LKE cluster, or bucket.",
               "background_color": "white",
               "font_size": "14",
               "text_align": "left",
@@ -1375,6 +1375,205 @@
         "y": 34,
         "width": 12,
         "height": 9
+      }
+    },
+    {
+      "id": 46,
+      "definition": {
+        "title": "Log Delivery",
+        "background_color": "vivid_pink",
+        "show_title": true,
+        "type": "group",
+        "layout_type": "ordered",
+        "widgets": [
+          {
+            "id": 41,
+            "definition": {
+              "title": "Successful uploads (time range)",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.logs.success_upload_count{$entity_label}",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "width": 4,
+              "height": 2
+            }
+          },
+          {
+            "id": 42,
+            "definition": {
+              "title": "Failed uploads (time range)",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "query_value",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.logs.error_upload_count{$entity_label}",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar"
+                }
+              ]
+            },
+            "layout": {
+              "x": 4,
+              "y": 0,
+              "width": 4,
+              "height": 2
+            }
+          },
+          {
+            "id": 43,
+            "definition": {
+              "title": "Streams reporting",
+              "title_size": "16",
+              "title_align": "left",
+              "type": "note",
+              "content": "Delivery metrics only appear for intervals in which the stream delivered logs. An empty chart means no deliveries, not a collection failure.",
+              "background_color": "white",
+              "font_size": "14",
+              "text_align": "left",
+              "vertical_align": "top",
+              "show_tick": false,
+              "tick_pos": "50%",
+              "tick_edge": "left",
+              "has_padding": true
+            },
+            "layout": {
+              "x": 8,
+              "y": 0,
+              "width": 4,
+              "height": 2
+            }
+          },
+          {
+            "id": 44,
+            "definition": {
+              "title": "Uploads by stream",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "success"
+                    },
+                    {
+                      "formula": "q1",
+                      "alias": "failed"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.logs.success_upload_count{$entity_label} by {entity_label}"
+                    },
+                    {
+                      "name": "q1",
+                      "data_source": "metrics",
+                      "query": "sum:akamai_cloud_pulse.logs.error_upload_count{$entity_label} by {entity_label}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 2,
+              "width": 6,
+              "height": 3
+            }
+          },
+          {
+            "id": 45,
+            "definition": {
+              "title": "Upload error rate (%)",
+              "title_size": "16",
+              "title_align": "left",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "formulas": [
+                    {
+                      "formula": "q0",
+                      "alias": "error rate"
+                    }
+                  ],
+                  "queries": [
+                    {
+                      "name": "q0",
+                      "data_source": "metrics",
+                      "query": "avg:akamai_cloud_pulse.logs.error_upload_rate{$entity_label} by {entity_label}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "dog_classic"
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "x": 6,
+              "y": 2,
+              "width": 6,
+              "height": 3
+            }
+          }
+        ]
+      },
+      "layout": {
+        "x": 0,
+        "y": 43,
+        "width": 12,
+        "height": 7
       }
     }
   ],
